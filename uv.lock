@@ -347,6 +347,7 @@ dependencies = [
     { name = "sphinx-design" },
     { name = "sqlalchemy" },
     { name = "sqlmodel" },
+    { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
