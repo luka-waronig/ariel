@@ -89,11 +89,24 @@
           from = pkgs.python312Packages.glfw;
           prev = _prev.glfw;
         };
+
+        torch = hacks.nixpkgsPrebuilt {
+          from = pkgs.python312Packages.torchWithoutCuda;
+          prev = _prev.torch.overrideAttrs (old: {
+            passthru =
+              old.passthru
+              // {
+                dependencies = pkgs.lib.filterAttrs (name: _: ! pkgs.lib.hasPrefix "nvidia" name) old.passthru.dependencies;
+              };
+          });
+        };
       }
     );
 
-    # This example is only using x86_64-linux
-    pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    pkgs = import nixpkgs {
+      system = "x86_64-linux";
+      config.allowUnfree = true;
+    };
 
     # Use Python 3.12 from nixpkgs
     python = pkgs.python312;
