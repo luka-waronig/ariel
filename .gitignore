@@ -163,6 +163,8 @@ cython_debug/
 .Trash-*
 # .nfs files are created when an open file is removed but is still being accessed
 .nfs*
+# For users who use direnv
+.direnv/*
 ### MACOS ######################################################################
 # General
 .DS_Store
