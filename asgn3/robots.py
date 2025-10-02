@@ -26,7 +26,7 @@ class RobotBody:
     def copy(self) -> "RobotBody":
         return RobotBody(self.genotype.copy(), self.num_modules)
 
-    def mutate(self) -> Self:
+    def mutation(self) -> Self:
         P = 0.05
 
         for vec in self.genotype:
@@ -53,7 +53,7 @@ class RobotBody:
 
         selection = []
         for vec in self.genotype:
-            selection.append(RNG.random(size=vec.weights.shape))
+            selection.append(RNG.random(size=vec.shape))
         for i in range(len(self.genotype)):
             left.genotype[i][selection[i] > P] = self.genotype[i][selection[i] > P]
             left.genotype[i][selection[i] < P] = other.genotype[i][selection[i] < P]
@@ -190,6 +190,7 @@ class TrainingBrain(Brain):
         results = inputs
         for layer in self.layers:
             results = layer.forward(results)
+        return results
 
     def mutation(self) -> Self:
         P = 0.05
@@ -250,10 +251,13 @@ class Robot:
     """
 
     def __init__(self, body: RobotBody, brain: Brain) -> None:
+        self.body = body
+        self.brain = brain
         self.core = construct_mjspec_from_graph(body.robot_graph)
+        self.tracker = self.get_tracker()
         self.controller = Controller(
             controller_callback_function=brain,
-            tracker=self.get_tracker(),
+            tracker=self.tracker,
         )
 
     def get_tracker(self):
@@ -264,6 +268,12 @@ class Robot:
             name_to_bind=name_to_bind,
         )
         return tracker
+
+    def fitness(self):
+        x = self.tracker.history["xpos"][0][-1][0]
+        x = abs(x)
+        y = self.tracker.history["xpos"][0][-1][1]
+        return y - x
 
 
 def random_body_genotype(genotype_size: int) -> list[NDArray[np.float32]]:
