@@ -1,14 +1,12 @@
 from pathlib import Path
 from typing import Any
-from copy import deepcopy
+from multiprocessing import Pool
 
 import mujoco
 from mujoco import viewer
 from networkx import DiGraph
 import numpy as np
-from numpy.typing import NDArray
 
-from ariel.simulation.controllers.controller import Controller
 from ariel.simulation.environments.olympic_arena import OlympicArena
 from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
@@ -16,7 +14,7 @@ from ariel.utils.video_recorder import VideoRecorder
 
 from rng import RNG
 from robots import (
-    RandomBrain,
+    TrainingBrain,
     RandomRobotBody,
     Robot,
     RobotBody,
@@ -24,6 +22,9 @@ from robots import (
     random_body_genotype,
 )
 
+from rich.traceback import install
+
+install(width=180, locals_max_length=100)
 
 SCRIPT_NAME = __file__.split("/")[-1][:-3]
 CWD = Path.cwd()
@@ -33,17 +34,86 @@ DATA.mkdir(exist_ok=True)
 
 class EvolutionaryAlgorithm:
     def __init__(self) -> None:
+        self.processes = 8
         self.num_modules = 20
         self.genotype_size = 64
+        self.body_generations = 256
+        self.body_population_size = 64
+        self.brain_generations = 256
+        self.brain_population_size = 64
+
+    def evolve_brains(self, robot_body: RobotBody) -> "Robot":
+        input_size, output_size = self.get_input_output_sizes(robot_body)
+        brains = [TrainingBrain(input_size, output_size).random() for _ in range(self.brain_population_size)]
+        
+        best_brain = None
+        fitness = np.zeros((self.body_generations, self.body_population_size))
+
+        for generation in range(self.brain_generations):
+            pairs = []
+            for brain in brains:
+                robot = Robot(robot_body, brain)
+                self.experiment(robot=robot, mode="simple")
+                pairs.append((brain, robot.fitness(), robot_body))
+            pairs.sort(key=lambda x: x[1], reverse=True)
+            best_brain = pairs[0]
+
+            fitness[generation, :] = [pair[1] for pair in pairs]
+
+            scaled_fitnesses = np.array(
+                [pair[1] - pairs[-1][1] for pair in pairs]
+            )
+            scaled_fitnesses /= sum(scaled_fitnesses)
+
+            next_gen = []
+            for _ in range(round(len(brains) / 4)):
+                choice = RNG.choice(a=pairs, size=2, replace=False, p=scaled_fitnesses)
+                p1 = choice[0][0]
+                p2 = choice[1][0]
+                c1, c2 = p1.crossover(p2)
+                c1.mutation()
+                c2.mutation()
+                next_gen.append(c1)
+                next_gen.append(c2)
+            
+            next_gen.extend([c for c in brains[: len(brains) // 2]])
+            brains = next_gen
+        return best_brain
 
     def run_random(self):
-        body_genotype = random_body_genotype(self.genotype_size)
-        robot_body = RandomRobotBody(body_genotype, self.num_modules)
+        body_genotypes = [random_body_genotype(self.genotype_size) for _ in range(self.body_population_size)]
+        robot_bodies = [RandomRobotBody(body_genotype, self.num_modules) for body_genotype in body_genotypes]
 
-        input_size, output_size = self.get_input_output_sizes(robot_body)
-        robot = Robot(robot_body, RandomBrain(input_size, output_size))
+        fitness = np.zeros((self.body_generations, self.body_population_size))
+        best_robot = None
+        for generation in range(self.body_generations):
+            with Pool(processes=self.processes) as pool:
+                robots = pool.map(self.evolve_brains, robot_bodies)
+                robots.sort(key=lambda x: x[1], reverse=True)
+                best_robot = robots[0]
 
-        self.experiment(robot=robot, mode="launcher")
+                fitness[generation, :] = [r[1] for r in robots]
+
+                scaled_fitnesses = np.array(
+                    [c[1] - robots[-1][1] for c in robots]
+                )
+                scaled_fitnesses /= sum(scaled_fitnesses)
+
+                next_gen = []
+                for _ in range(round(len(robots) / 4)):
+                    choice = RNG.choice(a=robots, size=2, replace=False, p=scaled_fitnesses)
+                    p1 = choice[0][2]
+                    p2 = choice[1][2]
+                    c1, c2 = p1.crossover(p2)
+                    c1.mutation()
+                    c2.mutation()
+                    next_gen.append(c1)
+                    next_gen.append(c2)
+                
+                next_gen.extend([c for c in robots[: len(robots) // 2]])
+                robots = next_gen
+
+        return best_robot
 
     def experiment(
         self,
@@ -78,7 +148,7 @@ class EvolutionaryAlgorithm:
                 simple_runner(
                     model,
                     data,
-                    duration=0.1,
+                    duration,
                 )
             case "frame":
                 # Render a single frame (for debugging)
