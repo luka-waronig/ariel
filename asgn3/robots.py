@@ -1,4 +1,5 @@
-from typing import Any
+from copy import deepcopy
+from typing import Any, Self
 import mujoco
 from networkx import DiGraph
 import numpy as np
@@ -16,8 +17,50 @@ from rng import RNG
 
 
 class RobotBody:
-    def __init__(self, body_genotype, num_modules: int) -> None:
-        pass
+    def __init__(
+        self, body_genotype: list[NDArray[np.float32]], num_modules: int
+    ) -> None:
+        self.genotype = body_genotype
+        self.num_modules = num_modules
+
+    def copy(self) -> "RobotBody":
+        return RobotBody(self.genotype.copy(), self.num_modules)
+
+    def mutate(self) -> Self:
+        P = 0.05
+
+        for vec in self.genotype:
+            selection = RNG.random(vec.shape) < P
+            vec[selection] += RNG.normal(0, 1, size=vec.shape)[selection]
+
+        return self
+
+    def crossover(self, other: "RobotBody") -> list["RobotBody"]:
+        """
+        Create two children using crossover with `other`. Uses uniform crossover
+        with a probability of `CROSSOVER_THRESHOLD`.
+
+        :param self: Description
+        :param other: The other parent
+        :type other: "Brain"
+        :return: A list containing the two children.
+        :rtype: list[Brain]
+        """
+        left = self.copy()
+        right = self.copy()
+
+        P = 0.5
+
+        selection = []
+        for vec in self.genotype:
+            selection.append(RNG.random(size=vec.weights.shape))
+        for i in range(len(self.genotype)):
+            left.genotype[i][selection[i] > P] = self.genotype[i][selection[i] > P]
+            left.genotype[i][selection[i] < P] = other.genotype[i][selection[i] < P]
+            right.genotype[i][selection[i] < P] = self.genotype[i][selection[i] < P]
+            right.genotype[i][selection[i] > P] = other.genotype[i][selection[i] > P]
+
+        return [left, right]
 
 
 class RandomRobotBody(RobotBody):
@@ -36,6 +79,21 @@ class RandomRobotBody(RobotBody):
         )
 
 
+class Layer:
+    def __init__(self, input_size: int, output_size: int, function) -> None:
+        self.input_size = input_size
+        self.output_size = output_size
+        self.weights = np.zeros(shape=(input_size, output_size))
+        self.function = function
+
+    def random(self) -> Self:
+        self.weights = RNG.standard_normal((self.input_size, self.output_size))
+        return self
+
+    def forward(self, inputs: np.ndarray) -> np.ndarray:
+        return self.function(np.dot(inputs, self.weights))
+
+
 class Brain:
     def __init__(self, input_size: int, output_size: int) -> None:
         pass
@@ -46,6 +104,25 @@ class Brain:
         data: mujoco.MjData,
     ) -> Any:
         pass
+
+    def mutation(self) -> "Brain":
+        return self
+
+    def crossover(self, other: "Brain") -> list["Brain"]:
+        """
+        Create two children using crossover with `other`. Uses uniform crossover
+        with a probability of `CROSSOVER_THRESHOLD`.
+
+        :param self: Description
+        :param other: The other parent
+        :type other: "Brain"
+        :return: A list containing the two children.
+        :rtype: list[Brain]
+        """
+        return [self, other]
+
+    def copy(self) -> "Brain":
+        raise NotImplementedError()
 
 
 class TestBrain(Brain):
@@ -93,6 +170,79 @@ class RandomBrain(Brain):
         return outputs * np.pi
 
 
+class TrainingBrain(Brain):
+    def __init__(self, input_size: int, output_size: int) -> None:
+        super().__init__(input_size, output_size)
+
+        self.layers = [
+            Layer(input_size, 50, np.tanh),
+            Layer(50, 30, np.tanh),
+            Layer(30, output_size, np.tanh),
+        ]
+
+    def random(self) -> Self:
+        self.layers = [layer.random() for layer in self.layers]
+        return self
+
+    def __call__(self, model: mujoco.MjModel, data: mujoco.MjData) -> Any:
+        inputs = data.qpos
+
+        results = inputs
+        for layer in self.layers:
+            results = layer.forward(results)
+
+    def mutation(self) -> Self:
+        P = 0.05
+
+        for layer in self.layers:
+            mutation_mask = RNG.random(size=layer.weights.shape) < P
+            layer.weights[mutation_mask] += RNG.normal(
+                scale=0.1, size=layer.weights.shape
+            )[mutation_mask]
+
+        return self
+
+    def crossover(self, other: "Brain") -> list["Brain"]:
+        """
+        Create two children using crossover with `other`. Uses uniform crossover
+        with a probability of `CROSSOVER_THRESHOLD`.
+
+        :param self: Description
+        :param other: The other parent
+        :type other: "Brain"
+        :return: A list containing the two children.
+        :rtype: list[Brain]
+        """
+        left = self.copy()
+        right = self.copy()
+
+        P = 0.5
+
+        selection = []
+        for l in self.layers:
+            selection.append(RNG.random(size=l.weights.shape))
+        for i in range(len(self.layers)):
+            left.layers[i].weights[selection[i] > P] = self.layers[i].weights[
+                selection[i] > P
+            ]
+            left.layers[i].weights[selection[i] < P] = other.layers[i].weights[
+                selection[i] < P
+            ]
+            right.layers[i].weights[selection[i] < P] = self.layers[i].weights[
+                selection[i] < P
+            ]
+            right.layers[i].weights[selection[i] > P] = other.layers[i].weights[
+                selection[i] > P
+            ]
+
+        return [left, right]
+
+    def copy(self) -> Brain:
+        new = TrainingBrain(self.layers[0].input_size, self.layers[-1].output_size)
+        new.layers = [deepcopy(layer) for layer in self.layers]
+        return new
+
+
 class Robot:
     """
     A combination of a RobotBody and a Brain. Robots can only be used once in
@@ -116,7 +266,7 @@ class Robot:
         return tracker
 
 
-def random_body_genotype(genotype_size: int):
+def random_body_genotype(genotype_size: int) -> list[NDArray[np.float32]]:
     type_p_genes = RNG.random(genotype_size).astype(np.float32)
     conn_p_genes = RNG.random(genotype_size).astype(np.float32)
     rot_p_genes = RNG.random(genotype_size).astype(np.float32)
