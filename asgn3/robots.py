@@ -4,6 +4,7 @@ import mujoco
 from networkx import DiGraph
 import numpy as np
 from numpy.typing import NDArray
+from rich.traceback import install
 
 from ariel.body_phenotypes.robogen_lite.constructor import construct_mjspec_from_graph
 from ariel.body_phenotypes.robogen_lite.decoders.hi_prob_decoding import (
@@ -13,7 +14,10 @@ from ariel.ec.genotypes.nde.nde import NeuralDevelopmentalEncoding
 from ariel.simulation.controllers.controller import Controller
 from ariel.utils.tracker import Tracker
 
-from rng import RNG
+from rng import NP_RNG
+
+
+install(width=180, show_locals=False)
 
 
 class RobotBody:
@@ -30,8 +34,8 @@ class RobotBody:
         P = 0.05
 
         for vec in self.genotype:
-            selection = RNG.random(vec.shape) < P
-            vec[selection] += RNG.normal(0, 1, size=vec.shape)[selection]
+            selection = NP_RNG.random(vec.shape) <= P
+            vec[selection] += NP_RNG.normal(0, 1, size=vec.shape)[selection]
 
         return self
 
@@ -53,11 +57,11 @@ class RobotBody:
 
         selection = []
         for vec in self.genotype:
-            selection.append(RNG.random(size=vec.shape))
+            selection.append(NP_RNG.random(size=vec.shape))
         for i in range(len(self.genotype)):
             left.genotype[i][selection[i] > P] = self.genotype[i][selection[i] > P]
-            left.genotype[i][selection[i] < P] = other.genotype[i][selection[i] < P]
-            right.genotype[i][selection[i] < P] = self.genotype[i][selection[i] < P]
+            left.genotype[i][selection[i] <= P] = other.genotype[i][selection[i] <= P]
+            right.genotype[i][selection[i] <= P] = self.genotype[i][selection[i] <= P]
             right.genotype[i][selection[i] > P] = other.genotype[i][selection[i] > P]
 
         return [left, right]
@@ -83,15 +87,18 @@ class Layer:
     def __init__(self, input_size: int, output_size: int, function) -> None:
         self.input_size = input_size
         self.output_size = output_size
-        self.weights = np.zeros(shape=(input_size, output_size))
+        self.weights = np.zeros(shape=(input_size, output_size), dtype=np.float32)
         self.function = function
 
     def random(self) -> Self:
-        self.weights = RNG.standard_normal((self.input_size, self.output_size))
+        self.weights = NP_RNG.standard_normal((self.input_size, self.output_size))
         return self
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         return self.function(np.dot(inputs, self.weights))
+
+    def __repr__(self) -> str:
+        return f"Layer({self.input_size}, {self.output_size})"
 
 
 class Brain:
@@ -149,9 +156,9 @@ class RandomBrain(Brain):
         # Initialize the networks weights randomly
         # Normally, you would use the genes of an individual as the weights,
         # Here we set them randomly for simplicity.
-        self.w1 = RNG.normal(loc=0.0138, scale=0.5, size=(input_size, hidden_size))
-        self.w2 = RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, hidden_size))
-        self.w3 = RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, output_size))
+        self.w1 = NP_RNG.normal(loc=0.0138, scale=0.5, size=(input_size, hidden_size))
+        self.w2 = NP_RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, hidden_size))
+        self.w3 = NP_RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, output_size))
 
     def __call__(
         self,
@@ -196,8 +203,8 @@ class TrainingBrain(Brain):
         P = 0.05
 
         for layer in self.layers:
-            mutation_mask = RNG.random(size=layer.weights.shape) < P
-            layer.weights[mutation_mask] += RNG.normal(
+            mutation_mask = NP_RNG.random(size=layer.weights.shape) <= P
+            layer.weights[mutation_mask] += NP_RNG.normal(
                 scale=0.1, size=layer.weights.shape
             )[mutation_mask]
 
@@ -221,16 +228,18 @@ class TrainingBrain(Brain):
 
         selection = []
         for l in self.layers:
-            selection.append(RNG.random(size=l.weights.shape))
+            selection.append(NP_RNG.random(size=l.weights.shape))
         for i in range(len(self.layers)):
+            print(f"{self.layers[i] = }")
+            print(f"{other.layers[i] = }")
             left.layers[i].weights[selection[i] > P] = self.layers[i].weights[
                 selection[i] > P
             ]
-            left.layers[i].weights[selection[i] < P] = other.layers[i].weights[
-                selection[i] < P
+            left.layers[i].weights[selection[i] <= P] = other.layers[i].weights[
+                selection[i] <= P
             ]
-            right.layers[i].weights[selection[i] < P] = self.layers[i].weights[
-                selection[i] < P
+            right.layers[i].weights[selection[i] <= P] = self.layers[i].weights[
+                selection[i] <= P
             ]
             right.layers[i].weights[selection[i] > P] = other.layers[i].weights[
                 selection[i] > P
@@ -269,7 +278,7 @@ class Robot:
         )
         return tracker
 
-    def fitness(self):
+    def fitness(self) -> float:
         x = self.tracker.history["xpos"][0][-1][0]
         x = abs(x)
         y = self.tracker.history["xpos"][0][-1][1]
@@ -277,9 +286,9 @@ class Robot:
 
 
 def random_body_genotype(genotype_size: int) -> list[NDArray[np.float32]]:
-    type_p_genes = RNG.random(genotype_size).astype(np.float32)
-    conn_p_genes = RNG.random(genotype_size).astype(np.float32)
-    rot_p_genes = RNG.random(genotype_size).astype(np.float32)
+    type_p_genes = NP_RNG.random(genotype_size).astype(np.float32)
+    conn_p_genes = NP_RNG.random(genotype_size).astype(np.float32)
+    rot_p_genes = NP_RNG.random(genotype_size).astype(np.float32)
 
     genotype = [
         type_p_genes,
