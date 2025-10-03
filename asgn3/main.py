@@ -90,6 +90,7 @@ class EvolutionaryAlgorithm:
     def run_random(
         self, parallel: bool = True
     ) -> tuple[tuple[RobotBody, Brain], float]:
+        print(f"Started EA run ({parallel = })")
         # Create body population
         robot_bodies = self.generate_bodies()
 
