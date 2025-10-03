@@ -1,5 +1,6 @@
 from copy import deepcopy
 from typing import Any, Self
+from collections.abc import Callable
 import mujoco
 from networkx import DiGraph
 import numpy as np
@@ -84,7 +85,12 @@ class RandomRobotBody(RobotBody):
 
 
 class Layer:
-    def __init__(self, input_size: int, output_size: int, function) -> None:
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        function: Callable[[NDArray[np.float32]], NDArray[np.float32]],
+    ) -> None:
         self.input_size = input_size
         self.output_size = output_size
         self.weights = np.zeros(shape=(input_size, output_size), dtype=np.float32)

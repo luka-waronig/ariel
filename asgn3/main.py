@@ -77,18 +77,14 @@ class EvolutionaryAlgorithm:
 
             fitness[generation, :] = [pair[1] for pair in brains_fitness]
 
-            scaled_fitnesses = np.array(
-                [pair[1] - brains_fitness[-1][1] for pair in brains_fitness]
-            )
-            scaled_fitnesses /= sum(scaled_fitnesses)
+            weights = self.linear_windowed_weights(brains_fitness)
 
-            next_gen = self.children_brains(brains_fitness, scaled_fitnesses)
+            next_gen = self.children_brains(brains_fitness, weights)
             brains = next_gen
 
             # solves a type hinting problem
             if generation == self.brain_generations - 1:
-                output = ((robot_body, best_brain[0]), best_brain[1])
-                return output
+                return ((robot_body, best_brain[0]), best_brain[1])
         raise ValueError("self.brain_generations must be at least 1.")
 
     def run_random(
@@ -114,12 +110,9 @@ class EvolutionaryAlgorithm:
             best_robot = bodies_fitness[0]
 
             fitness[generation, :] = [r[1] for r in bodies_fitness]
-            scaled_fitnesses = np.array(
-                [c[1] - bodies_fitness[-1][1] for c in bodies_fitness]
-            )
-            scaled_fitnesses /= sum(scaled_fitnesses)
+            weights = self.linear_windowed_weights(bodies_fitness)
 
-            next_gen = self.children_bodies(bodies_fitness, scaled_fitnesses)
+            next_gen = self.children_bodies(bodies_fitness, weights)
             robot_bodies = next_gen
 
             if generation == self.body_generations - 1:
@@ -129,11 +122,11 @@ class EvolutionaryAlgorithm:
     def children_brains(
         self,
         brains_fitness: list[tuple[Brain, float]],
-        scaled_fitnesses: NDArray[np.float32],
+        weights: NDArray[np.float32],
     ) -> list[Brain]:
         next_gen: list[Brain] = []
         for _ in range(round(len(brains_fitness) / 4)):
-            choice = RNG.choices(brains_fitness, weights=scaled_fitnesses, k=2)
+            choice = RNG.choices(brains_fitness, weights=weights, k=2)
             p1 = choice[0][0]
             p2 = choice[1][0]
             c1, c2 = p1.crossover(p2)
@@ -150,11 +143,11 @@ class EvolutionaryAlgorithm:
     def children_bodies(
         self,
         bodies_fitness: list[tuple[tuple[RobotBody, Brain], float]],
-        scaled_fitnesses: NDArray[np.float32],
+        weights: NDArray[np.float32],
     ) -> list[RobotBody]:
         next_gen: list[RobotBody] = []
         for _ in range(round(len(bodies_fitness) / 4)):
-            choice = RNG.choices(bodies_fitness, weights=scaled_fitnesses, k=2)
+            choice = RNG.choices(bodies_fitness, weights=weights, k=2)
 
             p1: RobotBody = choice[0][0][0]
             p2: RobotBody = choice[1][0][0]
@@ -291,6 +284,13 @@ class EvolutionaryAlgorithm:
         input_size = len(data.qpos)
         output_size = model.nu
         return input_size, output_size
+
+    def linear_windowed_weights(
+        self, fitness: list[tuple[Any, float]]
+    ) -> NDArray[np.float32]:
+        weights = np.array([pair[1] - fitness[-1][1] for pair in fitness])
+        weights /= sum(weights)
+        return weights
 
 
 def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
