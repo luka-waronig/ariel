@@ -1,5 +1,9 @@
+# type: ignore
+
 import numpy as np
+from numpy.typing import NDArray
 from typing import Any, Self
+from collections.abc import Callable
 
 CROSSOVER_THRESHOLD = 0.5
 MUTATION_THRESHOLD = 0.05
@@ -8,7 +12,12 @@ rng = np.random.default_rng()
 
 
 class Layer:
-    def __init__(self, input_size: int, output_size: int, function) -> None:
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        function: Callable[[NDArray[np.float32]], NDArray[np.float32]],
+    ) -> None:
         self.input_size = input_size
         self.output_size = output_size
         self.weights = np.zeros(shape=(input_size, output_size))
@@ -88,16 +97,16 @@ class Brain:
         self._fitness = self.history[0][1] - self.history[-1][1]
         return self._fitness
 
-    def mutate(self):
+    def mutate(self) -> None:
         raise NotImplementedError()
 
-    def copy(self):
+    def copy(self) -> Self:
         raise NotImplementedError()
 
     def reset(self) -> "Brain":
         raise NotImplementedError()
 
-    def export(self) -> dict:
+    def export(self) -> dict[str, Any]:
         raise NotImplementedError()
 
 
@@ -122,7 +131,7 @@ class UniformBrain(Brain):
     def reset(self) -> "UniformBrain":
         return UniformBrain(self.layers, 0.0)
 
-    def export(self) -> dict:
+    def export(self) -> dict[str, Any]:
         return {
             "name": type(self).__name__,
             "layers": [
@@ -167,7 +176,7 @@ class SelfAdaptiveBrain(Brain):
     def reset(self) -> "SelfAdaptiveBrain":
         return SelfAdaptiveBrain(self.layers, self.mutation_rate)
 
-    def export(self) -> dict:
+    def export(self) -> dict[str, Any]:
         return {
             "name": type(self).__name__,
             "mutation_rate": self.mutation_rate,
@@ -187,13 +196,11 @@ class SelfAdaptiveBrain(Brain):
 
 # Keep track of data / history
 HISTORY = []
-CROSSOVER_THRESHOLD = 0.5
-MUTATION_THRESHOLD = 0.05
 
 rng = np.random.default_rng()
 
 
-def random_move(model, data, to_track) -> None:
+def random_move(model: Any, data: Any, to_track: Any) -> None:
     """Generate random movements for the robot's joints.
 
     The mujoco.set_mjcb_control() function will always give
@@ -273,7 +280,7 @@ class NoBrain(Brain):
     def reset(self) -> Brain:
         return NoBrain([], 0.0)
 
-    def export(self) -> dict:
+    def export(self) -> dict[str, Any]:
         return {
             "name": type(self).__name__,
             "layers": [],

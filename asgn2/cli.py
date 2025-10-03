@@ -1,3 +1,6 @@
+# type: ignore
+
+
 import click
 
 from enum import Enum

@@ -1,18 +1,18 @@
+# type: ignore
+
 # Third-party libraries
-from typing import Any, Self, Type
+from collections.abc import Callable
+from typing import Any
 import numpy as np
+from numpy.typing import NDArray
 import mujoco
-from mujoco import viewer
 import matplotlib.pyplot as plt
-import matplotlib
 import random as rd
 from enum import Enum
 
 from tqdm import tqdm
 
 # Local libraries
-from ariel.utils.renderers import video_renderer
-from ariel.utils.video_recorder import VideoRecorder
 from ariel.utils.runners import simple_runner
 from ariel.simulation.environments.simple_flat_world import SimpleFlatWorld
 
@@ -69,11 +69,11 @@ def load_brain(filename: str) -> Brain:
             layer.weights = np.array(layer_data["weights"])
             layers.append(layer)
         if data["name"] == "UniformBrain":
-            return UniformBrain(layers)
+            return UniformBrain(layers, 0.0)
         elif data["name"] == "SelfAdaptiveBrain":
             return SelfAdaptiveBrain(layers, mutation_rate=data["mutation_rate"])
         elif data["name"] == "NoBrain":
-            return NoBrain()
+            return NoBrain([], 0.0)
         else:
             raise ValueError(f"{data["name"]}: Invalid brain type.")
 
@@ -96,7 +96,7 @@ def load_fitness(filename: str) -> np.ndarray:
     return np.load(filename)
 
 
-def show_qpos_history(history: list):
+def show_qpos_history(history: list[float]):
     # Convert list of [x,y,z] positions to numpy array
     pos_data = np.array(history)
 
@@ -126,11 +126,11 @@ def show_qpos_history(history: list):
     plt.close()
 
 
-def sigmoid(x):
+def sigmoid(x: NDArray[np.float32]):
     return 1.0 / (1.0 + np.exp(-x))
 
 
-def sigmoid_output(x):
+def sigmoid_output(x: NDArray[np.float32]):
     return np.pi * (sigmoid(x) - 0.5)
 
 
@@ -244,7 +244,10 @@ def test_controller(controller: Brain, model: Any, data: Any, to_track: Any):
     """
     # Set the control callback function
     # This is called every time step to get the next action.
-    mujoco.set_mjcb_control(lambda m, d: controller.control(m, d, to_track))
+    ctlr_func: Callable[[Any, Any], Any] = lambda m, d: controller.control(
+        m, d, to_track
+    )
+    mujoco.set_mjcb_control(ctlr_func)
 
     simple_runner(model, data, duration=10)
     # If you want to record a video of your simulation, you can use the video renderer.
