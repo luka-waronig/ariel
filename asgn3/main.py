@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from multiprocessing import Pool
 
 import mujoco
-from mujoco import viewer
+from mujoco import MjData, viewer
 import numpy as np
 from numpy.typing import NDArray
 
@@ -13,7 +13,7 @@ from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
 from ariel.utils.video_recorder import VideoRecorder
 
-from rng import NP_RNG, RNG
+from rng import RNG
 from robots import (
     Brain,
     TrainingBrain,
@@ -26,7 +26,7 @@ from robots import (
 
 from rich.traceback import install
 
-install(width=180, show_locals=False)
+install(width=180, show_locals=True)
 
 SCRIPT_NAME = __file__.split("/")[-1][:-3]
 CWD = Path.cwd()
@@ -51,8 +51,11 @@ class EvolutionaryAlgorithm:
         assert self.brain_population_size % 4 == 0, "Populations must be div. by 4."
         assert self.body_population_size % 4 == 0, "Populations must be div. by 4."
 
-    def evolve_brains(self, robot_body: RobotBody) -> tuple[Brain, float]:
+    def evolve_brains(
+        self, robot_body: RobotBody
+    ) -> tuple[tuple[RobotBody, Brain], float]:
         # The bodies get fresh new brains at the start of learning
+
         brains = self.generate_brains(robot_body)
 
         best_brain: tuple[Brain, float]
@@ -60,7 +63,12 @@ class EvolutionaryAlgorithm:
 
         for generation in range(self.brain_generations):
             brains_fitness: list[tuple[Brain, float]] = []
+
+            itis = isinstance(robot_body, RandomRobotBody)
+            assert itis, f"{type(robot_body) = }"
+
             for brain in brains:
+                assert isinstance(brain, TrainingBrain), f"{type(brain) = }"
                 robot = Robot(robot_body, brain)
                 self.experiment(robot=robot, mode="simple")
                 brains_fitness.append((brain, robot.fitness()))
@@ -79,10 +87,13 @@ class EvolutionaryAlgorithm:
 
             # solves a type hinting problem
             if generation == self.brain_generations - 1:
-                return best_brain
+                output = ((robot_body, best_brain[0]), best_brain[1])
+                return output
         raise ValueError("self.brain_generations must be at least 1.")
 
-    def run_random(self):
+    def run_random(
+        self, parallel: bool = True
+    ) -> tuple[tuple[RobotBody, Brain], float]:
         # Create body population
         robot_bodies = self.generate_bodies()
 
@@ -90,9 +101,14 @@ class EvolutionaryAlgorithm:
         best_robot = None
 
         for generation in range(self.body_generations):
+            print(f"Gen {generation} body evaluation")
             # Use multiprocessing to speed up computations
-            with Pool(processes=self.processes) as pool:
-                bodies_fitness = pool.map(self.evolve_brains, robot_bodies)
+            if parallel:
+                with Pool(processes=self.processes) as pool:
+                    bodies_fitness = pool.map(self.evolve_brains, robot_bodies)
+            else:
+                bodies_fitness = list(map(self.evolve_brains, robot_bodies))
+            print(f"Gen {generation} body child generation.")
 
             bodies_fitness.sort(key=fitness_key, reverse=True)
             best_robot = bodies_fitness[0]
@@ -106,14 +122,16 @@ class EvolutionaryAlgorithm:
             next_gen = self.children_bodies(bodies_fitness, scaled_fitnesses)
             robot_bodies = next_gen
 
-        return best_robot
+            if generation == self.body_generations - 1:
+                return best_robot
+        raise ValueError("self.brain_generations must be at least 1.")
 
     def children_brains(
         self,
         brains_fitness: list[tuple[Brain, float]],
         scaled_fitnesses: NDArray[np.float32],
     ) -> list[Brain]:
-        next_gen = []
+        next_gen: list[Brain] = []
         for _ in range(round(len(brains_fitness) / 4)):
             choice = RNG.choices(brains_fitness, weights=scaled_fitnesses, k=2)
             p1 = choice[0][0]
@@ -131,22 +149,28 @@ class EvolutionaryAlgorithm:
 
     def children_bodies(
         self,
-        bodies_fitness: list[tuple[RobotBody, float]],
+        bodies_fitness: list[tuple[tuple[RobotBody, Brain], float]],
         scaled_fitnesses: NDArray[np.float32],
     ) -> list[RobotBody]:
-        next_gen = []
+        next_gen: list[RobotBody] = []
         for _ in range(round(len(bodies_fitness) / 4)):
             choice = RNG.choices(bodies_fitness, weights=scaled_fitnesses, k=2)
 
-            p1: RobotBody = choice[0][0]
-            p2: RobotBody = choice[1][0]
+            p1: RobotBody = choice[0][0][0]
+            p2: RobotBody = choice[1][0][0]
+            assert isinstance(p1, RandomRobotBody), f"{type(p1) = }"
+            assert isinstance(p2, RandomRobotBody), f"{type(p2) = }"
             c1, c2 = p1.crossover(p2)
             c1.mutation()
             c2.mutation()
             next_gen.append(c1)
             next_gen.append(c2)
+            assert isinstance(c1, RandomRobotBody), f"{type(c1) = }"
+            assert isinstance(c2, RandomRobotBody), f"{type(c2) = }"
 
-        next_gen.extend([c[0] for c in bodies_fitness[: len(bodies_fitness) // 2]])
+        next_gen.extend(
+            [c[0][0].copy() for c in bodies_fitness[: len(bodies_fitness) // 2]]
+        )
         return next_gen
 
     def generate_brains(self, robot_body: RobotBody) -> Sequence[Brain]:
@@ -158,7 +182,7 @@ class EvolutionaryAlgorithm:
 
         return brains
 
-    def generate_bodies(self):
+    def generate_bodies(self) -> Sequence[RobotBody]:
         body_genotypes = [
             random_body_genotype(self.genotype_size)
             for _ in range(self.body_population_size)
@@ -200,7 +224,7 @@ class EvolutionaryAlgorithm:
         match mode:  # type: ignore
             case "simple":
                 # This disables visualisation (fastest option)
-                simple_runner(model, data, duration, steps_per_loop=500)
+                simple_runner(model, data, duration)
             case "frame":
                 # Render a single frame (for debugging)
                 save_path = str(DATA / "robot.png")
@@ -231,7 +255,7 @@ class EvolutionaryAlgorithm:
                     data=data,
                 )
 
-    def compile_world(self, robot: Robot):
+    def compile_world(self, robot: Robot) -> tuple[OlympicArena, Any, MjData]:
         world = OlympicArena()
 
         # Spawn robot in the world
@@ -258,7 +282,9 @@ class EvolutionaryAlgorithm:
         :return: The input and output sizes
         :rtype: tuple[int, int]
         """
+        mujoco.set_mjcb_control(None)  # DO NOT REMOVE
 
+        assert isinstance(robot_body, RandomRobotBody), f"{type(robot_body) = }"
         robot = Robot(robot_body, TestBrain())
         _, model, data = self.compile_world(robot)
 
@@ -273,7 +299,7 @@ def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
 
 def main():
     ea = EvolutionaryAlgorithm()
-    ea.run_random()
+    ea.run_random(parallel=True)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ class RobotBody:
         self.num_modules = num_modules
 
     def copy(self) -> "RobotBody":
-        return RobotBody(self.genotype.copy(), self.num_modules)
+        return type(self)(self.genotype.copy(), self.num_modules)
 
     def mutation(self) -> Self:
         P = 0.05
@@ -230,8 +230,6 @@ class TrainingBrain(Brain):
         for l in self.layers:
             selection.append(NP_RNG.random(size=l.weights.shape))
         for i in range(len(self.layers)):
-            print(f"{self.layers[i] = }")
-            print(f"{other.layers[i] = }")
             left.layers[i].weights[selection[i] > P] = self.layers[i].weights[
                 selection[i] > P
             ]
