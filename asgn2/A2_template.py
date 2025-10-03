@@ -1,3 +1,5 @@
+# type: ignore
+
 # Third-party libraries
 from collections.abc import Callable
 from typing import Any
