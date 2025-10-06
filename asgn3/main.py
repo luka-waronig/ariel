@@ -1,4 +1,7 @@
+import json
+import os
 from pathlib import Path
+import time
 from typing import Any
 from collections.abc import Sequence
 from multiprocessing import Pool
@@ -50,6 +53,12 @@ class EvolutionaryAlgorithm:
         self.brain_population_size = 8
 
         self.viewer = False
+        now = time.localtime()
+        self.dir_name = Path(
+            f"__data__/ea_run_"
+            + f"{now.tm_year}_{now.tm_mon:02}_{now.tm_mday:02}_"
+            + f"{now.tm_hour:02}:{now.tm_min:02}:{now.tm_sec:02}"
+        )
 
         assert self.brain_population_size % 4 == 0, "Populations must be div. by 4."
         assert self.body_population_size % 4 == 0, "Populations must be div. by 4."
@@ -102,6 +111,8 @@ class EvolutionaryAlgorithm:
         fitness = np.zeros((self.body_generations, self.body_population_size))
         best_robot = None
 
+        os.mkdir(self.dir_name)
+
         for generation in range(self.body_generations):
             print(f"Gen {generation} body evaluation")
             # Use multiprocessing to speed up computations
@@ -115,6 +126,8 @@ class EvolutionaryAlgorithm:
             bodies_fitness.sort(key=fitness_key, reverse=True)
             best_robot = bodies_fitness[0]
 
+            self.save_state(generation, bodies_fitness)
+
             fitness[generation, :] = [r[1] for r in bodies_fitness]
             weights = self.linear_windowed_weights(bodies_fitness)
 
@@ -124,6 +137,23 @@ class EvolutionaryAlgorithm:
             if generation == self.body_generations - 1:
                 return best_robot
         raise ValueError("self.brain_generations must be at least 1.")
+
+    def save_state(
+        self,
+        generation: int,
+        bodies_fitness: list[tuple[tuple[RobotBody, Brain], float]],
+    ) -> None:
+        generation_state = []
+        for bot in bodies_fitness:
+            bot_data = {}
+            bot_data["body"] = bot[0][0].export()
+            bot_data["brain"] = bot[0][1].export()
+            bot_data["fitness"] = bot[1]
+            generation_state.append(bot_data)
+        with open(
+            self.dir_name.joinpath(Path(f"gen_{generation:04}.json")), "w"
+        ) as file:
+            file.writelines(json.dumps(generation_state, indent=2))
 
     def children_brains(
         self,
@@ -256,8 +286,6 @@ class EvolutionaryAlgorithm:
                     model=model,
                     data=data,
                 )
-        print(f"{robot.controller.tracker.history["bonus"] = }")
-        exit(0)
 
     def compile_world(self, robot: Robot) -> tuple[OlympicArena, Any, MjData]:
         world = OlympicArena()
@@ -294,9 +322,6 @@ class EvolutionaryAlgorithm:
         if robot.controller.tracker is not None:
             robot.controller.tracker.setup(world.spec, data)
 
-        for geom in robot.tracker.geoms:
-            print(geom.pos)
-
         input_size = len(data.qpos)
         output_size = model.nu
         return input_size, output_size
@@ -304,22 +329,31 @@ class EvolutionaryAlgorithm:
     def linear_windowed_weights(
         self, fitness: list[tuple[Any, float]]
     ) -> NDArray[np.float32]:
-        weights = np.array([pair[1] - fitness[-1][1] for pair in fitness])
-        weights /= sum(weights)
+        weights = np.array(
+            [pair[1] - fitness[-1][1] for pair in fitness], dtype=np.float32
+        )
+        weights_total = np.sum(weights)
+        if weights_total > 0:
+            weights /= weights_total
+        else:
+            # fallback if all weights are equal
+            weights = np.ones_like(weights) / np.float32(len(weights))
         return weights
 
 
 def termination_function(time: float, robot: Robot) -> bool:
     if robot.controller.tracker is not None:
         x = robot.controller.tracker.history["xpos"][0][-1][0]
+        robot.controller.tracker.history["bonus"] = 0.0
         # Early culling of bad bots
         if x < 0.03 * time - 1 / (time + 1) + 0.2:
-            robot.controller.tracker.history["bonus"] = 0.0
             return True
         # Early termination of fast bots, with fitness bonus
         if x > 5.0:
             robot.controller.tracker.history["bonus"] = max(time - 120.0, 0.0)
-    return False
+        return False
+    else:
+        raise ValueError("Robot controller not set.")
 
 
 def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
