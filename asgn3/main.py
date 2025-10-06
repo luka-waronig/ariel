@@ -13,6 +13,7 @@ from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
 from ariel.utils.video_recorder import VideoRecorder
 
+from runners import complicated_runner
 from rng import RNG
 from robots import (
     Brain,
@@ -48,6 +49,8 @@ class EvolutionaryAlgorithm:
         self.brain_generations = 1
         self.brain_population_size = 8
 
+        self.viewer = False
+
         assert self.brain_population_size % 4 == 0, "Populations must be div. by 4."
         assert self.body_population_size % 4 == 0, "Populations must be div. by 4."
 
@@ -70,7 +73,9 @@ class EvolutionaryAlgorithm:
             for brain in brains:
                 assert isinstance(brain, TrainingBrain), f"{type(brain) = }"
                 robot = Robot(robot_body, brain)
-                self.experiment(robot=robot, mode="simple")
+                self.experiment(
+                    robot=robot, mode="launcher" if self.viewer else "complicated"
+                )
                 brains_fitness.append((brain, robot.fitness()))
             brains_fitness.sort(key=fitness_key, reverse=True)
             best_brain = brains_fitness[0]
@@ -219,6 +224,9 @@ class EvolutionaryAlgorithm:
             case "simple":
                 # This disables visualisation (fastest option)
                 simple_runner(model, data, duration)
+            case "complicated":
+                # No visualisation, with termination function
+                complicated_runner(model, data, robot, termination_function, duration)
             case "frame":
                 # Render a single frame (for debugging)
                 save_path = str(DATA / "robot.png")
@@ -248,6 +256,8 @@ class EvolutionaryAlgorithm:
                     model=model,
                     data=data,
                 )
+        print(f"{robot.controller.tracker.history["bonus"] = }")
+        exit(0)
 
     def compile_world(self, robot: Robot) -> tuple[OlympicArena, Any, MjData]:
         world = OlympicArena()
@@ -278,9 +288,14 @@ class EvolutionaryAlgorithm:
         """
         mujoco.set_mjcb_control(None)  # DO NOT REMOVE
 
-        assert isinstance(robot_body, RandomRobotBody), f"{type(robot_body) = }"
         robot = Robot(robot_body, TestBrain())
-        _, model, data = self.compile_world(robot)
+        world, model, data = self.compile_world(robot)
+
+        if robot.controller.tracker is not None:
+            robot.controller.tracker.setup(world.spec, data)
+
+        for geom in robot.tracker.geoms:
+            print(geom.pos)
 
         input_size = len(data.qpos)
         output_size = model.nu
@@ -294,13 +309,26 @@ class EvolutionaryAlgorithm:
         return weights
 
 
+def termination_function(time: float, robot: Robot) -> bool:
+    if robot.controller.tracker is not None:
+        x = robot.controller.tracker.history["xpos"][0][-1][0]
+        # Early culling of bad bots
+        if x < 0.03 * time - 1 / (time + 1) + 0.2:
+            robot.controller.tracker.history["bonus"] = 0.0
+            return True
+        # Early termination of fast bots, with fitness bonus
+        if x > 5.0:
+            robot.controller.tracker.history["bonus"] = max(time - 120.0, 0.0)
+    return False
+
+
 def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
     return fitness_tuple[1]
 
 
 def main():
     ea = EvolutionaryAlgorithm()
-    ea.run_random(parallel=True)
+    ea.run_random(parallel=False)
 
 
 if __name__ == "__main__":
