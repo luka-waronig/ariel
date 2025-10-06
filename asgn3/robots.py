@@ -319,3 +319,8 @@ def random_body_genotype(genotype_size: int) -> list[NDArray[np.float32]]:
     ]
 
     return genotype
+
+
+TYPE_MAP = {
+    "RandomRobotBody": RandomRobotBody,
+}

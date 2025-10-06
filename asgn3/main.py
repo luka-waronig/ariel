@@ -3,8 +3,10 @@ import os
 from pathlib import Path
 import time
 from typing import Any
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from multiprocessing import Pool
+import math as mt
+from tqdm import tqdm
 
 import mujoco
 from mujoco import MjData, viewer
@@ -19,6 +21,7 @@ from ariel.utils.video_recorder import VideoRecorder
 from runners import complicated_runner
 from rng import RNG
 from robots import (
+    TYPE_MAP,
     Brain,
     TrainingBrain,
     RandomRobotBody,
@@ -43,16 +46,30 @@ class EvolutionaryAlgorithm:
         self.processes = 8
         self.num_modules = 20
         self.genotype_size = 64
-        # self.body_generations = 256
-        # self.body_population_size = 64
-        # self.brain_generations = 256
-        # self.brain_population_size = 64
-        self.body_generations = 10
-        self.body_population_size = 8
-        self.brain_generations = 1
-        self.brain_population_size = 8
+        self.body_generations = 256
+        self.body_population_size = 100
+        self.brain_generations = 256
+        self.brain_population_size = 100
+        # self.body_generations = 10
+        # self.body_population_size = 8
+        # self.brain_generations = 1
+        # self.brain_population_size = 8
+
+        self.body_survival_fraction = 0.1
+        self.brain_survival_fraction = 0.1
 
         self.viewer = False
+
+        self.body_children = mt.floor(
+            self.body_population_size * ((1 - self.body_survival_fraction) * 0.5)
+        )
+        self.body_keep = self.body_population_size - 2 * self.body_children
+
+        self.brain_children = mt.floor(
+            self.brain_population_size * ((1 - self.brain_survival_fraction) * 0.5)
+        )
+        self.brain_keep = self.brain_population_size - 2 * self.brain_children
+
         now = time.localtime()
         self.dir_name = Path(
             f"__data__/ea_run_"
@@ -62,6 +79,94 @@ class EvolutionaryAlgorithm:
 
         assert self.brain_population_size % 4 == 0, "Populations must be div. by 4."
         assert self.body_population_size % 4 == 0, "Populations must be div. by 4."
+        assert self.body_keep + 2 * self.body_children == self.body_population_size
+
+    def run_random(
+        self, parallel: bool = True
+    ) -> tuple[tuple[RobotBody, Brain], float]:
+        print(f"Started EA run ({parallel = })")
+        # Create body population
+        robot_bodies = self.generate_bodies()
+
+        fitness = np.zeros((self.body_generations, self.body_population_size))
+
+        os.mkdir(self.dir_name)
+
+        best_bot = self.run_generations(
+            parallel,
+            robot_bodies,
+            fitness,
+            range(self.body_generations),
+        )
+        print(fitness)
+
+        return best_bot
+
+    def resume(
+        self, path: Path, override: bool = True, parallel: bool = True
+    ) -> tuple[tuple[RobotBody, Brain], float]:
+        if override:
+            self.dir_name = path
+
+        files = sorted(os.listdir(path))
+        print(f"Detected {len(files)} generations.")
+
+        fitness = self.load_fitness(path, files)
+        bodies_fitness = self.load_bodies(path.joinpath(files[-1]))
+
+        weights = self.linear_windowed_weights(bodies_fitness)
+        robot_bodies = self.children_bodies(
+            [((body, ()), fit) for body, fit in bodies_fitness], weights
+        )
+
+        best_bot = self.run_generations(
+            parallel, robot_bodies, fitness, range(len(files), self.body_generations)
+        )
+        print(fitness)
+
+        return best_bot
+
+    def run_generations(
+        self,
+        parallel: bool,
+        robot_bodies: list[RobotBody],
+        fitness: NDArray[np.float32],
+        generations: Iterator[int],
+    ):
+        for generation in generations:
+            print(f"Gen {generation}")
+            # Use multiprocessing to speed up computations
+            if parallel:
+                with Pool(processes=self.processes) as pool:
+                    bodies_fitness = list(
+                        tqdm(
+                            pool.imap_unordered(self.evolve_brains, robot_bodies),
+                            total=self.body_population_size,
+                        )
+                    )
+            else:
+                bodies_fitness = list(
+                    tqdm(
+                        map(self.evolve_brains, robot_bodies),
+                        total=self.body_population_size,
+                    )
+                )
+
+            bodies_fitness.sort(key=fitness_key, reverse=True)
+            best_robot = bodies_fitness[0]
+            print(f"Best robot fitness: {best_robot[1]}")
+
+            self.save_state(generation, bodies_fitness)
+            fitness[generation, :] = [r[1] for r in bodies_fitness]
+
+            if generation == self.body_generations - 1:
+                return best_robot
+
+            weights = self.linear_windowed_weights(bodies_fitness)
+            next_gen = self.children_bodies(bodies_fitness, weights)
+            robot_bodies = next_gen
+
+        raise ValueError("self.brain_generations must be at least 1.")
 
     def evolve_brains(
         self, robot_body: RobotBody
@@ -101,43 +206,6 @@ class EvolutionaryAlgorithm:
                 return ((robot_body, best_brain[0]), best_brain[1])
         raise ValueError("self.brain_generations must be at least 1.")
 
-    def run_random(
-        self, parallel: bool = True
-    ) -> tuple[tuple[RobotBody, Brain], float]:
-        print(f"Started EA run ({parallel = })")
-        # Create body population
-        robot_bodies = self.generate_bodies()
-
-        fitness = np.zeros((self.body_generations, self.body_population_size))
-        best_robot = None
-
-        os.mkdir(self.dir_name)
-
-        for generation in range(self.body_generations):
-            print(f"Gen {generation} body evaluation")
-            # Use multiprocessing to speed up computations
-            if parallel:
-                with Pool(processes=self.processes) as pool:
-                    bodies_fitness = pool.map(self.evolve_brains, robot_bodies)
-            else:
-                bodies_fitness = list(map(self.evolve_brains, robot_bodies))
-            print(f"Gen {generation} body child generation.")
-
-            bodies_fitness.sort(key=fitness_key, reverse=True)
-            best_robot = bodies_fitness[0]
-
-            self.save_state(generation, bodies_fitness)
-
-            fitness[generation, :] = [r[1] for r in bodies_fitness]
-            weights = self.linear_windowed_weights(bodies_fitness)
-
-            next_gen = self.children_bodies(bodies_fitness, weights)
-            robot_bodies = next_gen
-
-            if generation == self.body_generations - 1:
-                return best_robot
-        raise ValueError("self.brain_generations must be at least 1.")
-
     def save_state(
         self,
         generation: int,
@@ -161,7 +229,7 @@ class EvolutionaryAlgorithm:
         weights: NDArray[np.float32],
     ) -> list[Brain]:
         next_gen: list[Brain] = []
-        for _ in range(round(len(brains_fitness) / 4)):
+        for _ in range(self.brain_children):
             choice = RNG.choices(brains_fitness, weights=weights, k=2)
             p1 = choice[0][0]
             p2 = choice[1][0]
@@ -171,9 +239,7 @@ class EvolutionaryAlgorithm:
             next_gen.append(c1)
             next_gen.append(c2)
 
-        next_gen.extend(
-            [c[0].copy() for c in brains_fitness[: len(brains_fitness) // 2]]
-        )
+        next_gen.extend([c[0].copy() for c in brains_fitness[: self.brain_keep]])
         return next_gen
 
     def children_bodies(
@@ -182,24 +248,18 @@ class EvolutionaryAlgorithm:
         weights: NDArray[np.float32],
     ) -> list[RobotBody]:
         next_gen: list[RobotBody] = []
-        for _ in range(round(len(bodies_fitness) / 4)):
+        for _ in range(self.body_children):
             choice = RNG.choices(bodies_fitness, weights=weights, k=2)
 
             p1: RobotBody = choice[0][0][0]
             p2: RobotBody = choice[1][0][0]
-            assert isinstance(p1, RandomRobotBody), f"{type(p1) = }"
-            assert isinstance(p2, RandomRobotBody), f"{type(p2) = }"
             c1, c2 = p1.crossover(p2)
             c1.mutation()
             c2.mutation()
             next_gen.append(c1)
             next_gen.append(c2)
-            assert isinstance(c1, RandomRobotBody), f"{type(c1) = }"
-            assert isinstance(c2, RandomRobotBody), f"{type(c2) = }"
 
-        next_gen.extend(
-            [c[0][0].copy() for c in bodies_fitness[: len(bodies_fitness) // 2]]
-        )
+        next_gen.extend([c[0][0].copy() for c in bodies_fitness[: self.body_keep]])
         return next_gen
 
     def generate_brains(self, robot_body: RobotBody) -> Sequence[Brain]:
@@ -340,6 +400,33 @@ class EvolutionaryAlgorithm:
             weights = np.ones_like(weights) / np.float32(len(weights))
         return weights
 
+    def load_fitness(self, directory: Path, files: list[str]) -> NDArray[np.float32]:
+        fitness = np.zeros(
+            (self.body_generations, self.body_population_size), dtype=np.float32
+        )
+        for nr, file in enumerate(files):
+            with open(directory.joinpath(file), "r") as file:
+                data: list[dict[str, Any]] = json.load(file)
+                fitness[nr] = [indiv["fitness"] for indiv in data]
+
+        return fitness
+
+    def load_bodies(self, path: Path) -> list[tuple[RobotBody, float]]:
+        robot_bodies = []
+        with open(path, "r") as file:
+            data = json.load(file)
+        for individual in data:
+            robot_type = TYPE_MAP[individual["body"]["type"]]
+            genotype_data = individual["body"]["genotype"]
+            genotype = [np.array(lst) for lst in genotype_data]
+            num_modules = individual["body"]["num_modules"]
+
+            fitness = individual["fitness"]
+            body = robot_type(genotype, num_modules)
+            robot_bodies.append((body, fitness))
+
+        return robot_bodies
+
 
 def termination_function(time: float, robot: Robot) -> bool:
     if robot.controller.tracker is not None:
@@ -362,7 +449,7 @@ def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
 
 def main():
     ea = EvolutionaryAlgorithm()
-    ea.run_random(parallel=False)
+    ea.run_random(parallel=True)
 
 
 if __name__ == "__main__":
