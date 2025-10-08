@@ -423,7 +423,7 @@ class EvolutionaryAlgorithm:
         self, fitness: list[tuple[Any, float]]
     ) -> NDArray[np.float32]:
         weights = np.array(
-            [1 - np.e ** (-rank) for rank in np.arange(len(fitness)) + 1],
+            [1 - np.e ** (-rank) for rank in np.arange(len(fitness) - 1, -1, -1)],
             dtype=np.float32,
         )
 
@@ -482,8 +482,8 @@ def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
 
 def main():
     ea = EvolutionaryAlgorithm()
-    # ea.run_random(parallel=True)
-    ea.resume(Path("__data__/ea_run_2025_10_08_18:23:14"))
+    ea.run_random(parallel=True)
+    # ea.resume(Path("__data__/ea_run_2025_10_08_18:23:14"))
 
 
 if __name__ == "__main__":

@@ -305,7 +305,7 @@ class Robot:
         x = self.tracker.history["xpos"][0][-1][0]
         y = self.tracker.history["xpos"][0][-1][1]
         bonus = self.tracker.history["bonus"]
-        return x - x_start - abs(y) + bonus
+        return x - x_start - max(abs(y) - 1, 0) + bonus
 
 
 def random_body_genotype(genotype_size: int) -> list[NDArray[np.float32]]:
