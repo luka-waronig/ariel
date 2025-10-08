@@ -6,8 +6,9 @@ from typing import Any
 from collections.abc import Iterator, Sequence
 from multiprocessing import Pool
 import math as mt
-from tqdm import tqdm
+import re
 
+from tqdm import tqdm
 import mujoco
 from mujoco import MjData, viewer
 import numpy as np
@@ -18,6 +19,7 @@ from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
 from ariel.utils.video_recorder import VideoRecorder
 
+from plotters import LivePlotter
 from runners import complicated_runner
 from rng import RNG
 from robots import (
@@ -43,7 +45,7 @@ DATA.mkdir(exist_ok=True)
 
 class EvolutionaryAlgorithm:
     def __init__(self) -> None:
-        self.processes = 8
+        self.processes = 12
         self.num_modules = 20
         self.genotype_size = 64
         self.body_generations = 256
@@ -55,7 +57,7 @@ class EvolutionaryAlgorithm:
         # self.brain_generations = 1
         # self.brain_population_size = 8
 
-        self.body_survival_fraction = 0.1
+        self.body_survival_fraction = 0.0
         self.brain_survival_fraction = 0.1
 
         self.viewer = False
@@ -89,14 +91,12 @@ class EvolutionaryAlgorithm:
         robot_bodies = self.generate_bodies()
 
         fitness = np.zeros((self.body_generations, self.body_population_size))
+        plotter = LivePlotter(fitness, self.dir_name)
 
         os.mkdir(self.dir_name)
 
         best_bot = self.run_generations(
-            parallel,
-            robot_bodies,
-            fitness,
-            range(self.body_generations),
+            parallel, robot_bodies, fitness, range(self.body_generations), plotter
         )
         print(fitness)
 
@@ -109,10 +109,12 @@ class EvolutionaryAlgorithm:
             self.dir_name = path
 
         files = sorted(os.listdir(path))
-        print(f"Detected {len(files)} generations.")
+        gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
+        print(f"Detected {len(gen_files)} generations.")
 
-        fitness = self.load_fitness(path, files)
-        bodies_fitness = self.load_bodies(path.joinpath(files[-1]))
+        fitness = self.load_fitness(path, gen_files)
+        plotter = LivePlotter(fitness, self.dir_name)
+        bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
 
         weights = self.linear_windowed_weights(bodies_fitness)
         robot_bodies = self.children_bodies(
@@ -120,7 +122,11 @@ class EvolutionaryAlgorithm:
         )
 
         best_bot = self.run_generations(
-            parallel, robot_bodies, fitness, range(len(files), self.body_generations)
+            parallel,
+            robot_bodies,
+            fitness,
+            range(len(gen_files), self.body_generations),
+            plotter,
         )
         print(fitness)
 
@@ -132,6 +138,7 @@ class EvolutionaryAlgorithm:
         robot_bodies: list[RobotBody],
         fitness: NDArray[np.float32],
         generations: Iterator[int],
+        plotter: LivePlotter,
     ) -> tuple[tuple[RobotBody, Brain], float]:
         for generation in generations:
             print(f"Gen {generation}")
@@ -158,11 +165,12 @@ class EvolutionaryAlgorithm:
 
             self.save_state(generation, bodies_fitness)
             fitness[generation, :] = [r[1] for r in bodies_fitness]
+            plotter.plot()
 
             if generation == self.body_generations - 1:
                 return best_robot
 
-            weights = self.linear_windowed_weights(bodies_fitness)
+            weights = self.exponential_ranking_weights(bodies_fitness)
             next_gen = self.children_bodies(bodies_fitness, weights)
             robot_bodies = next_gen
 
@@ -408,6 +416,18 @@ class EvolutionaryAlgorithm:
         else:
             # fallback if all weights are equal
             weights = np.ones_like(weights) / np.float32(len(weights))
+        return weights
+
+    def exponential_ranking_weights(
+        self, fitness: list[tuple[Any, float]]
+    ) -> NDArray[np.float32]:
+        weights = np.array(
+            [1 - np.e ** (-rank) for rank in np.arange(len(fitness)) + 1],
+            dtype=np.float32,
+        )
+
+        weights_total = np.sum(weights)
+        weights /= weights_total
         return weights
 
     def load_fitness(self, directory: Path, files: list[str]) -> NDArray[np.float32]:
