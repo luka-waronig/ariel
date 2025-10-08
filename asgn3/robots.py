@@ -301,11 +301,11 @@ class Robot:
         return tracker
 
     def fitness(self) -> float:
+        x_start = self.tracker.history["xpos"][0][0][0]
         x = self.tracker.history["xpos"][0][-1][0]
-        x = abs(x)
         y = self.tracker.history["xpos"][0][-1][1]
         bonus = self.tracker.history["bonus"]
-        return y - x + bonus
+        return x - x_start - abs(y) + bonus
 
 
 def random_body_genotype(genotype_size: int) -> list[NDArray[np.float32]]:

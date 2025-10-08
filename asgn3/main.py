@@ -35,7 +35,7 @@ from robots import (
 
 from rich.traceback import install
 
-install(width=180, show_locals=True)
+install(width=180, show_locals=False)
 
 SCRIPT_NAME = __file__.split("/")[-1][:-3]
 CWD = Path.cwd()
@@ -61,6 +61,7 @@ class EvolutionaryAlgorithm:
         self.brain_survival_fraction = 0.1
 
         self.viewer = False
+        self.spawn_position = [-0.8, 0, 0.1]
 
         self.body_children = mt.floor(
             self.body_population_size * ((1 - self.body_survival_fraction) * 0.5)
@@ -370,7 +371,7 @@ class EvolutionaryAlgorithm:
 
         # Spawn robot in the world
         # Check docstring for spawn conditions
-        world.spawn(robot.core.spec, spawn_position=[0, 0, 0.1])
+        world.spawn(robot.core.spec, spawn_position=self.spawn_position)
 
         # Generate the model and data
         # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
@@ -460,13 +461,15 @@ class EvolutionaryAlgorithm:
 
 def termination_function(time: float, robot: Robot) -> bool:
     if robot.controller.tracker is not None:
+        x_start = robot.controller.tracker.history["xpos"][0][0][0]
         x = robot.controller.tracker.history["xpos"][0][-1][0]
+        dx = x - x_start
         robot.controller.tracker.history["bonus"] = 0.0
         # Early culling of bad bots
-        if x < 0.03 * time - 1 / (time + 1) + 0.2:
+        if dx < 0.03 * time - 1 / (time + 1) + 0.2:
             return True
         # Early termination of fast bots, with fitness bonus
-        if x > 5.0:
+        if dx > 5.0:
             robot.controller.tracker.history["bonus"] = max(time - 120.0, 0.0)
         return False
     else:
@@ -479,7 +482,8 @@ def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
 
 def main():
     ea = EvolutionaryAlgorithm()
-    ea.run_random(parallel=True)
+    # ea.run_random(parallel=True)
+    ea.resume(Path("__data__/ea_run_2025_10_08_18:23:14"))
 
 
 if __name__ == "__main__":
