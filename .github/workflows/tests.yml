@@ -62,4 +62,4 @@ jobs:
 
       - name: Run MyPy
         if: matrix.session == 'mypy'
-        run: uv run mypy asgn3
+        run: uv run mypy asgn3/main.py

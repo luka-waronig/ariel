@@ -20,7 +20,9 @@ from ariel.simulation.environments.olympic_arena import OlympicArena
 from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
 from ariel.utils.video_recorder import VideoRecorder
-from ariel.body_phenotypes.robogen_lite.decoders.hi_prob_decoding import save_graph_as_json
+from ariel.body_phenotypes.robogen_lite.decoders.hi_prob_decoding import (
+    save_graph_as_json,
+)
 
 from plotters import LivePlotter
 from runners import complicated_runner
@@ -52,9 +54,9 @@ class EvolutionaryAlgorithm:
         self.processes = 12
         self.num_modules = 20
         self.genotype_size = 64
-        self.body_generations = 256
-        self.body_population_size = 12
-        self.brain_generations = 256
+        self.body_generations = 2
+        self.body_population_size = 100
+        self.brain_generations = 10
         self.brain_population_size = 100
         # self.body_generations = 1
         # self.body_population_size = 8
@@ -101,6 +103,9 @@ class EvolutionaryAlgorithm:
         plotter = LivePlotter(fitness, self.dir_name)
 
         os.mkdir(self.dir_name)
+        with open(self.dir_name.joinpath("nde.json"), "w") as file:
+            output = export_nde(self.nde)
+            json.dump(output, file)
 
         best_bot = self.run_generations(
             parallel, robot_bodies, fitness, range(self.body_generations), plotter
@@ -116,9 +121,12 @@ class EvolutionaryAlgorithm:
             self.dir_name = path
 
         files = sorted(os.listdir(path))
+        assert "nde.json" in files
         gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
         print(f"Detected {len(gen_files)} generations.")
 
+        with open(path.joinpath("nde.json"), "r") as file:
+            self.nde = import_nde(json.load(file))
         fitness = self.load_fitness(path, gen_files)
         plotter = LivePlotter(fitness, self.dir_name)
         bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
@@ -204,7 +212,9 @@ class EvolutionaryAlgorithm:
         raise ValueError("self.brain_generations must be at least 1.")
 
     def evolve_brains(
-        self, robot_body: RobotBody, fitness: NDArray[np.float32] | None = None
+        self,
+        robot_body: RobotBody,
+        fitness: NDArray[np.float32] | None = None,
     ) -> tuple[tuple[RobotBody, Brain], float]:
         # The bodies get fresh new brains at the start of learning
 
@@ -221,9 +231,7 @@ class EvolutionaryAlgorithm:
 
             for brain in brains:
                 robot = Robot(robot_body, brain)
-                self.experiment(
-                    robot=robot, mode="launcher" if self.viewer else "complicated"
-                )
+                self.experiment(robot=robot)
                 brains_fitness.append((brain, robot.fitness()))
 
             brains_fitness.sort(key=fitness_key, reverse=True)
@@ -241,7 +249,6 @@ class EvolutionaryAlgorithm:
                 )
                 largest_fitness_change = np.max(np.abs(np.diff(last_five_fitness)))
                 if largest_fitness_change < 0.0005:
-                    print(largest_fitness_change)
                     return ((robot_body, best_brain[0]), best_brain[1])
 
             weights = self.linear_windowed_weights(brains_fitness)
@@ -353,7 +360,7 @@ class EvolutionaryAlgorithm:
         self,
         robot: Robot,
         duration: int = 15,
-        mode: str = "viewer",
+        mode: str = "complicated",
     ) -> None:
         """Run the simulation with random movements."""
         # ==================================================================== #
@@ -532,33 +539,34 @@ def export_nde(nde: NeuralDevelopmentalEncoding) -> dict[str, Any]:
         "number_of_modules": nde.type_p_shape[0],
         "fc1": {
             "weight": nde.fc1.weight.data.tolist(),
-            "bias": nde.fc1.bias.data.tolist()
+            "bias": nde.fc1.bias.data.tolist(),
         },
         "fc2": {
             "weight": nde.fc2.weight.data.tolist(),
-            "bias": nde.fc2.bias.data.tolist()
+            "bias": nde.fc2.bias.data.tolist(),
         },
         "fc3": {
             "weight": nde.fc3.weight.data.tolist(),
-            "bias": nde.fc3.bias.data.tolist()
+            "bias": nde.fc3.bias.data.tolist(),
         },
         "fc4": {
             "weight": nde.fc4.weight.data.tolist(),
-            "bias": nde.fc4.bias.data.tolist()
+            "bias": nde.fc4.bias.data.tolist(),
         },
         "type_p_out": {
             "weight": nde.type_p_out.weight.data.tolist(),
-            "bias": nde.type_p_out.bias.data.tolist()
+            "bias": nde.type_p_out.bias.data.tolist(),
         },
         "conn_p_out": {
             "weight": nde.conn_p_out.weight.data.tolist(),
-            "bias": nde.conn_p_out.bias.data.tolist()
+            "bias": nde.conn_p_out.bias.data.tolist(),
         },
         "rot_p_out": {
             "weight": nde.rot_p_out.weight.data.tolist(),
-            "bias": nde.rot_p_out.bias.data.tolist()
+            "bias": nde.rot_p_out.bias.data.tolist(),
         },
     }
+
 
 def import_nde(data: dict[str, Any]) -> NeuralDevelopmentalEncoding:
     nde = NeuralDevelopmentalEncoding(data["number_of_modules"])

@@ -17,6 +17,8 @@ from ariel.utils.tracker import Tracker
 
 from rng import NP_RNG
 
+import networkx.readwrite.json_graph as json_graph
+import json
 
 install(width=180, show_locals=False)
 
@@ -73,14 +75,18 @@ class RobotBody:
         return [left, right]
 
     def export(self) -> dict[str, Any]:
+        """Fyi RandomBrain doesnt work with this yet."""
+        data = json_graph.node_link_data(self.robot_graph, edges="edges")
+        json_string = json.dumps(data, indent=4)
         return {
             "type": str(type(self).__name__),
+            "phenotype": json_string,
             "genotype": [vec.tolist() for vec in self.genotype],
             "num_modules": self.num_modules,
         }
 
     @classmethod
-    def from_graph(cls, graph: DiGraph[Any]) -> Self:
+    def from_graph(cls, graph: Any) -> Self:
         body = cls(None, None, None)
         body.robot_graph = graph
         return body
@@ -104,6 +110,9 @@ class RandomRobotBody(RobotBody):
             p_matrices[2],
         )
 
+    def __eq__(self, other: object) -> bool:
+        return self.robot_graph == other.robot_graph
+
 
 class Layer:
     def __init__(
@@ -124,10 +133,10 @@ class Layer:
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         return self.function(np.dot(inputs, self.weights))
 
-    def export(self) -> dict[str, Any]: #list[list[float]]:
+    def export(self) -> dict[str, Any]:  # list[list[float]]:
         return {
             "weights": self.weights.tolist(),
-            "activation_function": self.function.__name__
+            "activation_function": self.function.__name__,
         }
 
     def __repr__(self) -> str:
@@ -222,9 +231,9 @@ class TrainingBrain(Brain):
         super().__init__(input_size, output_size)
 
         self.layers = [
-            Layer(input_size, 50, np.tanh),
-            Layer(50, 30, np.tanh),
-            Layer(30, output_size, np.tanh),
+            Layer(input_size, 25, np.tanh),
+            Layer(25, 25, np.tanh),
+            Layer(25, output_size, np.tanh),
         ]
 
     def random(self) -> Self:
