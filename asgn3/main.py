@@ -134,6 +134,26 @@ class EvolutionaryAlgorithm:
 
         return best_bot
 
+    def run_single_brain(
+        self, path: Path, parallel: bool = True
+    ) -> tuple[tuple[RobotBody, Brain], float]:
+        self.dir_name = path
+
+        files = sorted(os.listdir(path))
+        gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
+        bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
+        best_body = bodies_fitness[0][0]
+
+        fitness = np.zeros((self.brain_generations, self.brain_population_size))
+        best_bot = self.evolve_brains(best_body, fitness=fitness)
+
+        plotter = LivePlotter(fitness, self.dir_name)
+        plotter.plot()
+
+        print(fitness)
+
+        return best_bot
+
     def run_generations(
         self,
         parallel: bool,
@@ -179,23 +199,22 @@ class EvolutionaryAlgorithm:
         raise ValueError("self.brain_generations must be at least 1.")
 
     def evolve_brains(
-        self, robot_body: RobotBody
+        self, robot_body: RobotBody, fitness: NDArray[np.float32] | None = None
     ) -> tuple[tuple[RobotBody, Brain], float]:
         # The bodies get fresh new brains at the start of learning
 
         brains = self.generate_brains(robot_body)
 
         best_brain: tuple[Brain, float]
-        fitness = np.zeros((self.brain_generations, self.brain_population_size))
+        if fitness is None:
+            fitness = np.zeros(
+                (self.brain_generations, self.brain_population_size), dtype=np.float32
+            )
 
         for generation in range(self.brain_generations):
             brains_fitness: list[tuple[Brain, float]] = []
 
-            itis = isinstance(robot_body, RandomRobotBody)
-            assert itis, f"{type(robot_body) = }"
-
             for brain in brains:
-                assert isinstance(brain, TrainingBrain), f"{type(brain) = }"
                 robot = Robot(robot_body, brain)
                 self.experiment(
                     robot=robot, mode="launcher" if self.viewer else "complicated"
@@ -305,9 +324,9 @@ class EvolutionaryAlgorithm:
 
     def generate_bodies_preselect(self) -> Sequence[RobotBody]:
         print("Robot preselection")
-        progress_bar = tqdm(total=100)
+        progress_bar = tqdm(total=self.body_population_size)
         body_genotypes = []
-        while len(body_genotypes) < 100:
+        while len(body_genotypes) < self.body_population_size:
             genotype = random_body_genotype(self.genotype_size)
             body = RandomRobotBody(genotype, self.num_modules)
             input_size, output_size = self.get_input_output_sizes(body)
@@ -506,6 +525,7 @@ def main():
     ea = EvolutionaryAlgorithm()
     ea.run_random(parallel=True)
     # ea.resume(Path("__data__/ea_run_2025_10_08_18:23:14"))
+    # ea.run_single_brain(Path("asgn3/example_results"))
 
 
 if __name__ == "__main__":
