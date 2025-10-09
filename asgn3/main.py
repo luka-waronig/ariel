@@ -109,6 +109,36 @@ class EvolutionaryAlgorithm:
 
         return best_bot
 
+    def resume(
+        self, path: Path, override: bool = True, parallel: bool = True
+    ) -> tuple[tuple[RobotBody, Brain], float]:
+        if override:
+            self.dir_name = path
+
+        files = sorted(os.listdir(path))
+        gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
+        print(f"Detected {len(gen_files)} generations.")
+
+        fitness = self.load_fitness(path, gen_files)
+        plotter = LivePlotter(fitness, self.dir_name)
+        bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
+
+        weights = self.linear_windowed_weights(bodies_fitness)
+        robot_bodies = self.children_bodies(
+            [((body, ()), fit) for body, fit in bodies_fitness], weights
+        )
+
+        best_bot = self.run_generations(
+            parallel,
+            robot_bodies,
+            fitness,
+            range(len(gen_files), self.body_generations),
+            plotter,
+        )
+        print(fitness)
+
+        return best_bot
+
     def run_single_brain(
         self, path: Path, parallel: bool = True
     ) -> tuple[tuple[RobotBody, Brain], float]:

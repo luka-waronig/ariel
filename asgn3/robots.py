@@ -17,8 +17,6 @@ from ariel.utils.tracker import Tracker
 
 from rng import NP_RNG
 
-import networkx.readwrite.json_graph as json_graph
-import json
 
 install(width=180, show_locals=False)
 
@@ -75,11 +73,9 @@ class RobotBody:
         return [left, right]
 
     def export(self) -> dict[str, Any]:
-        data = json_graph.node_link_data(self.robot_graph, edges="edges")
-        json_string = json.dumps(data, indent=4)
         return {
             "type": str(type(self).__name__),
-            "phenotype": json_string,
+            "genotype": [vec.tolist() for vec in self.genotype],
             "num_modules": self.num_modules,
         }
 
