@@ -79,6 +79,12 @@ class RobotBody:
             "num_modules": self.num_modules,
         }
 
+    @classmethod
+    def from_graph(cls, graph: DiGraph[Any]) -> Self:
+        body = cls(None, None, None)
+        body.robot_graph = graph
+        return body
+
 
 class RandomRobotBody(RobotBody):
     def __init__(
