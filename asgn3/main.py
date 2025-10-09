@@ -13,6 +13,7 @@ import mujoco
 from mujoco import MjData, viewer
 import numpy as np
 from numpy.typing import NDArray
+import torch
 
 from ariel.ec.genotypes.nde.nde import NeuralDevelopmentalEncoding
 from ariel.simulation.environments.olympic_arena import OlympicArena
@@ -494,6 +495,59 @@ def termination_function(time: float, robot: Robot) -> bool:
 
 def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
     return fitness_tuple[1]
+
+
+def export_nde(nde: NeuralDevelopmentalEncoding) -> dict[str, Any]:
+    return {
+        "number_of_modules": nde.type_p_shape[0],
+        "fc1": {
+            "weight": nde.fc1.weight,
+            "bias": nde.fc1.bias
+        },
+        "fc2": {
+            "weight": nde.fc2.weight,
+            "bias": nde.fc2.bias
+        },
+        "fc3": {
+            "weight": nde.fc3.weight,
+            "bias": nde.fc3.bias
+        },
+        "fc4": {
+            "weight": nde.fc4.weight,
+            "bias": nde.fc4.bias
+        },
+        "type_p_out": {
+            "weight": nde.type_p_out.weight,
+            "bias": nde.type_p_out.bias
+        },
+        "conn_p_out": {
+            "weight": nde.conn_p_out.weight,
+            "bias": nde.conn_p_out.bias
+        },
+        "rot_p_out": {
+            "weight": nde.rot_p_out.weight,
+            "bias": nde.rot_p_out.bias
+        },
+    }
+    
+def import_nde(data: dict[str, Any]) -> NeuralDevelopmentalEncoding:
+    nde = NeuralDevelopmentalEncoding(data["number_of_modules"])
+    nde.fc1.weight = data["fc1"]["weight"]
+    nde.fc1.bias = data["fc1"]["bias"]
+    nde.fc2.weight = data["fc2"]["weight"]
+    nde.fc2.bias = data["fc2"]["bias"]
+    nde.fc3.weight = data["fc3"]["weight"]
+    nde.fc3.bias = data["fc3"]["bias"]
+    nde.fc4.weight = data["fc4"]["weight"]
+    nde.fc4.bias = data["fc4"]["bias"]
+    nde.type_p_out.weight = data["type_p_out"]["weight"]
+    nde.type_p_out.bias = data["type_p_out"]["bias"]
+    nde.conn_p_out.weight = data["conn_p_out"]["weight"]
+    nde.conn_p_out.bias = data["conn_p_out"]["bias"]
+    nde.rot_p_out.weight = data["rot_p_out"]["weight"]
+    nde.rot_p_out.bias = data["rot_p_out"]["bias"]
+
+    return nde
 
 
 def main():
