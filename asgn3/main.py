@@ -13,12 +13,14 @@ import mujoco
 from mujoco import MjData, viewer
 import numpy as np
 from numpy.typing import NDArray
+import torch
 
 from ariel.ec.genotypes.nde.nde import NeuralDevelopmentalEncoding
 from ariel.simulation.environments.olympic_arena import OlympicArena
 from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
 from ariel.utils.video_recorder import VideoRecorder
+from ariel.body_phenotypes.robogen_lite.decoders.hi_prob_decoding import save_graph_as_json
 
 from plotters import LivePlotter
 from runners import complicated_runner
@@ -54,7 +56,7 @@ class EvolutionaryAlgorithm:
         self.body_population_size = 12
         self.brain_generations = 256
         self.brain_population_size = 100
-        # self.body_generations = 10
+        # self.body_generations = 1
         # self.body_population_size = 8
         # self.brain_generations = 1
         # self.brain_population_size = 8
@@ -102,36 +104,6 @@ class EvolutionaryAlgorithm:
 
         best_bot = self.run_generations(
             parallel, robot_bodies, fitness, range(self.body_generations), plotter
-        )
-        print(fitness)
-
-        return best_bot
-
-    def resume(
-        self, path: Path, override: bool = True, parallel: bool = True
-    ) -> tuple[tuple[RobotBody, Brain], float]:
-        if override:
-            self.dir_name = path
-
-        files = sorted(os.listdir(path))
-        gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
-        print(f"Detected {len(gen_files)} generations.")
-
-        fitness = self.load_fitness(path, gen_files)
-        plotter = LivePlotter(fitness, self.dir_name)
-        bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
-
-        weights = self.linear_windowed_weights(bodies_fitness)
-        robot_bodies = self.children_bodies(
-            [((body, ()), fit) for body, fit in bodies_fitness], weights
-        )
-
-        best_bot = self.run_generations(
-            parallel,
-            robot_bodies,
-            fitness,
-            range(len(gen_files), self.body_generations),
-            plotter,
         )
         print(fitness)
 
@@ -525,9 +497,67 @@ def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
     return fitness_tuple[1]
 
 
+def export_nde(nde: NeuralDevelopmentalEncoding) -> dict[str, Any]:
+    return {
+        "number_of_modules": nde.type_p_shape[0],
+        "fc1": {
+            "weight": nde.fc1.weight,
+            "bias": nde.fc1.bias
+        },
+        "fc2": {
+            "weight": nde.fc2.weight,
+            "bias": nde.fc2.bias
+        },
+        "fc3": {
+            "weight": nde.fc3.weight,
+            "bias": nde.fc3.bias
+        },
+        "fc4": {
+            "weight": nde.fc4.weight,
+            "bias": nde.fc4.bias
+        },
+        "type_p_out": {
+            "weight": nde.type_p_out.weight,
+            "bias": nde.type_p_out.bias
+        },
+        "conn_p_out": {
+            "weight": nde.conn_p_out.weight,
+            "bias": nde.conn_p_out.bias
+        },
+        "rot_p_out": {
+            "weight": nde.rot_p_out.weight,
+            "bias": nde.rot_p_out.bias
+        },
+    }
+    
+def import_nde(data: dict[str, Any]) -> NeuralDevelopmentalEncoding:
+    nde = NeuralDevelopmentalEncoding(data["number_of_modules"])
+    nde.fc1.weight = data["fc1"]["weight"]
+    nde.fc1.bias = data["fc1"]["bias"]
+    nde.fc2.weight = data["fc2"]["weight"]
+    nde.fc2.bias = data["fc2"]["bias"]
+    nde.fc3.weight = data["fc3"]["weight"]
+    nde.fc3.bias = data["fc3"]["bias"]
+    nde.fc4.weight = data["fc4"]["weight"]
+    nde.fc4.bias = data["fc4"]["bias"]
+    nde.type_p_out.weight = data["type_p_out"]["weight"]
+    nde.type_p_out.bias = data["type_p_out"]["bias"]
+    nde.conn_p_out.weight = data["conn_p_out"]["weight"]
+    nde.conn_p_out.bias = data["conn_p_out"]["bias"]
+    nde.rot_p_out.weight = data["rot_p_out"]["weight"]
+    nde.rot_p_out.bias = data["rot_p_out"]["bias"]
+
+    return nde
+
+
 def main():
     ea = EvolutionaryAlgorithm()
-    ea.run_random(parallel=True)
+    best_robot = ea.run_random(parallel=True)
+    robot = best_robot[0]
+    save_graph_as_json(robot[0].robot_graph, DATA / "robot_graph.json")
+    json_data = json.dumps(robot[1].export(), indent=4)
+    with Path(DATA / "brain.json").open("w", encoding="utf-8") as f:
+        f.write(json_data)
     # ea.resume(Path("__data__/ea_run_2025_10_08_18:23:14"))
     # ea.run_single_brain(Path("asgn3/example_results"))
 
