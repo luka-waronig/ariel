@@ -111,8 +111,11 @@ class Layer:
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         return self.function(np.dot(inputs, self.weights))
 
-    def export(self) -> list[list[float]]:
-        return self.weights.tolist()
+    def export(self) -> dict[str, Any]: #list[list[float]]:
+        return {
+            "weights": self.weights.tolist(),
+            "activation_function": self.function.__name__
+        }
 
     def __repr__(self) -> str:
         return f"Layer({self.input_size}, {self.output_size})"

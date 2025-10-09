@@ -18,6 +18,7 @@ from ariel.simulation.environments.olympic_arena import OlympicArena
 from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
 from ariel.utils.video_recorder import VideoRecorder
+from ariel.body_phenotypes.robogen_lite.decoders.hi_prob_decoding import save_graph_as_json
 
 from plotters import LivePlotter
 from runners import complicated_runner
@@ -49,14 +50,14 @@ class EvolutionaryAlgorithm:
         self.processes = 12
         self.num_modules = 20
         self.genotype_size = 64
-        self.body_generations = 256
-        self.body_population_size = 100
-        self.brain_generations = 256
-        self.brain_population_size = 100
-        # self.body_generations = 10
-        # self.body_population_size = 8
-        # self.brain_generations = 1
-        # self.brain_population_size = 8
+        # self.body_generations = 256
+        # self.body_population_size = 100
+        # self.brain_generations = 256
+        # self.brain_population_size = 100
+        self.body_generations = 1
+        self.body_population_size = 8
+        self.brain_generations = 1
+        self.brain_population_size = 8
 
         self.body_survival_fraction = 0.0
         self.brain_survival_fraction = 0.1
@@ -523,7 +524,12 @@ def fitness_key(fitness_tuple: tuple[Any, float]) -> float:
 
 def main():
     ea = EvolutionaryAlgorithm()
-    ea.run_random(parallel=True)
+    best_robot = ea.run_random(parallel=True)
+    robot = best_robot[0]
+    save_graph_as_json(robot[0].robot_graph, DATA / "robot_graph.json")
+    json_data = json.dumps(robot[1].export(), indent=4)
+    with Path(DATA / "brain.json").open("w", encoding="utf-8") as f:
+        f.write(json_data)
     # ea.resume(Path("__data__/ea_run_2025_10_08_18:23:14"))
     # ea.run_single_brain(Path("asgn3/example_results"))
 
