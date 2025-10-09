@@ -31,6 +31,7 @@ from robots import (
     TYPE_MAP,
     Brain,
     RandomBrain,
+    SelfAdaptiveBrain,
     TrainingBrain,
     RandomRobotBody,
     Robot,
@@ -56,7 +57,7 @@ class EvolutionaryAlgorithm:
         self.genotype_size = 64
         self.body_generations = 2
         self.body_population_size = 100
-        self.brain_generations = 10
+        self.brain_generations = 5
         self.brain_population_size = 100
         # self.body_generations = 1
         # self.body_population_size = 8
@@ -64,7 +65,7 @@ class EvolutionaryAlgorithm:
         # self.brain_population_size = 8
 
         self.body_survival_fraction = 0.0
-        self.brain_survival_fraction = 0.1
+        self.brain_survival_fraction = 0.01
 
         self.viewer = False
         self.spawn_position = [-0.8, 0, 0.1]
@@ -121,7 +122,7 @@ class EvolutionaryAlgorithm:
             self.dir_name = path
 
         files = sorted(os.listdir(path))
-        assert "nde.json" in files
+        assert "nde.json" in files, "No nde.json file found in folder."
         gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
         print(f"Detected {len(gen_files)} generations.")
 
@@ -153,10 +154,13 @@ class EvolutionaryAlgorithm:
         self.dir_name = path
 
         files = sorted(os.listdir(path))
+        assert "nde.json" in files, "No nde.json file found in folder."
         gen_files = [f for f in files if re.match(r"^gen_\d{4}.json$", f)]
-        bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
-        best_body = bodies_fitness[0][0]
 
+        with open(path.joinpath("nde.json"), "r") as file:
+            self.nde = import_nde(json.load(file))
+        bodies_fitness = self.load_bodies(path.joinpath(gen_files[-1]))
+        best_body = bodies_fitness[1][0]
         fitness = np.zeros((self.brain_generations, self.brain_population_size))
         best_bot = self.evolve_brains(best_body, fitness=fitness)
 
@@ -251,7 +255,7 @@ class EvolutionaryAlgorithm:
                 if largest_fitness_change < 0.0005:
                     return ((robot_body, best_brain[0]), best_brain[1])
 
-            weights = self.linear_windowed_weights(brains_fitness)
+            weights = self.exponential_ranking_weights(brains_fitness)
 
             next_gen = self.children_brains(brains_fitness, weights)
             brains = next_gen
@@ -285,7 +289,9 @@ class EvolutionaryAlgorithm:
             choice = RNG.choices(brains_fitness, weights=weights, k=2)
             p1 = choice[0][0]
             p2 = choice[1][0]
-            c1, c2 = p1.crossover(p2)
+            # c1, c2 = p1.crossover(p2)
+            c1 = p1.copy()
+            c2 = p2.copy()
             c1.mutation()
             c2.mutation()
             next_gen.append(c1)
@@ -317,7 +323,7 @@ class EvolutionaryAlgorithm:
     def generate_brains(self, robot_body: RobotBody) -> Sequence[Brain]:
         input_size, output_size = self.get_input_output_sizes(robot_body)
         brains = [
-            TrainingBrain(input_size, output_size).random()
+            SelfAdaptiveBrain(input_size, output_size).random()
             for _ in range(self.brain_population_size)
         ]
 

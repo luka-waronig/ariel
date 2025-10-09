@@ -259,6 +259,21 @@ class TrainingBrain(Brain):
 
         return self
 
+    @classmethod
+    def from_genotype(cls, genotype: list[dict[str, Any]]) -> Self:
+        brain = cls(0, 0)
+
+        brain.layers = []
+        for gene in genotype:
+            assert (
+                gene["activation_function"] == "tanh"
+            ), f"Incorrect function name {gene["activation_function"]}."
+            arr = np.array(gene["weights"])
+            layer = Layer(*arr.shape, function=np.tanh)
+            brain.layers.append(layer)
+
+        return brain
+
     def crossover(self, other: "Brain") -> list["Brain"]:
         """
         Create two children using crossover with `other`. Uses uniform crossover
@@ -271,7 +286,7 @@ class TrainingBrain(Brain):
         :rtype: list[Brain]
         """
         left = self.copy()
-        right = self.copy()
+        right = other.copy()
 
         P = 0.5
 
@@ -298,6 +313,74 @@ class TrainingBrain(Brain):
         new = TrainingBrain(self.layers[0].input_size, self.layers[-1].output_size)
         new.layers = [deepcopy(layer) for layer in self.layers]
         return new
+
+
+class SelfAdaptiveBrain(TrainingBrain):
+    def __init__(self, input_size: int, output_size: int) -> None:
+        super().__init__(input_size, output_size)
+        self.self_adaptive_parameters = [
+            SelfAdaptiveParameters(input_size, 25),
+            SelfAdaptiveParameters(25, 25),
+            SelfAdaptiveParameters(25, output_size),
+        ]
+        self.weight_amount = input_size * 25 + 25 * 25 + 25 * output_size
+
+    def random(self) -> Self:
+        super().random()
+        return self
+
+    def mutation(self) -> Self:
+        tau_prime = 1 / np.sqrt(2 * self.weight_amount)
+        tau = 1 / np.sqrt(2 * np.sqrt(self.weight_amount))
+        [
+            sigma.update(
+                tau_prime,
+                tau,
+            )
+            for sigma in self.self_adaptive_parameters
+        ]
+
+        for layer, sigma in zip(self.layers, self.self_adaptive_parameters):
+            layer.weights += sigma.weights * NP_RNG.normal(
+                scale=0.1, size=layer.weights.shape
+            )
+
+        return self
+
+    def copy(self) -> Brain:
+        new = SelfAdaptiveBrain(self.layers[0].input_size, self.layers[-1].output_size)
+        new.layers = [deepcopy(layer) for layer in self.layers]
+        new.self_adaptive_parameters = self.self_adaptive_parameters
+        return new
+
+    def export(self) -> dict[str, Any]:
+        """Fyi RandomBrain doesnt work with this yet."""
+        output = super().export()
+        output["self_adaptive_parameters"] = [
+            sigma.weights.tolist() for sigma in self.self_adaptive_parameters
+        ]
+        return output
+
+
+class SelfAdaptiveParameters:
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+    ) -> None:
+        self.input_size = input_size
+        self.output_size = output_size
+        self.weights = np.full(
+            shape=(input_size, output_size), fill_value=0.01, dtype=np.float32
+        )
+        self.adaptive_minimum = 0.01
+
+    def update(self, tau_prime: float, tau: float) -> None:
+        self.weights *= np.exp(
+            tau_prime * NP_RNG.normal(0, 1.0, size=self.weights.shape)
+            + tau * NP_RNG.normal(0, 1.0, size=self.weights.shape)
+        )
+        self.weights.clip(min=self.adaptive_minimum, out=self.weights)
 
 
 class Robot:
