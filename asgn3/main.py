@@ -501,51 +501,51 @@ def export_nde(nde: NeuralDevelopmentalEncoding) -> dict[str, Any]:
     return {
         "number_of_modules": nde.type_p_shape[0],
         "fc1": {
-            "weight": nde.fc1.weight,
-            "bias": nde.fc1.bias
+            "weight": nde.fc1.weight.data.tolist(),
+            "bias": nde.fc1.bias.data.tolist()
         },
         "fc2": {
-            "weight": nde.fc2.weight,
-            "bias": nde.fc2.bias
+            "weight": nde.fc2.weight.data.tolist(),
+            "bias": nde.fc2.bias.data.tolist()
         },
         "fc3": {
-            "weight": nde.fc3.weight,
-            "bias": nde.fc3.bias
+            "weight": nde.fc3.weight.data.tolist(),
+            "bias": nde.fc3.bias.data.tolist()
         },
         "fc4": {
-            "weight": nde.fc4.weight,
-            "bias": nde.fc4.bias
+            "weight": nde.fc4.weight.data.tolist(),
+            "bias": nde.fc4.bias.data.tolist()
         },
         "type_p_out": {
-            "weight": nde.type_p_out.weight,
-            "bias": nde.type_p_out.bias
+            "weight": nde.type_p_out.weight.data.tolist(),
+            "bias": nde.type_p_out.bias.data.tolist()
         },
         "conn_p_out": {
-            "weight": nde.conn_p_out.weight,
-            "bias": nde.conn_p_out.bias
+            "weight": nde.conn_p_out.weight.data.tolist(),
+            "bias": nde.conn_p_out.bias.data.tolist()
         },
         "rot_p_out": {
-            "weight": nde.rot_p_out.weight,
-            "bias": nde.rot_p_out.bias
+            "weight": nde.rot_p_out.weight.data.tolist(),
+            "bias": nde.rot_p_out.bias.data.tolist()
         },
     }
-    
+
 def import_nde(data: dict[str, Any]) -> NeuralDevelopmentalEncoding:
     nde = NeuralDevelopmentalEncoding(data["number_of_modules"])
-    nde.fc1.weight = data["fc1"]["weight"]
-    nde.fc1.bias = data["fc1"]["bias"]
-    nde.fc2.weight = data["fc2"]["weight"]
-    nde.fc2.bias = data["fc2"]["bias"]
-    nde.fc3.weight = data["fc3"]["weight"]
-    nde.fc3.bias = data["fc3"]["bias"]
-    nde.fc4.weight = data["fc4"]["weight"]
-    nde.fc4.bias = data["fc4"]["bias"]
-    nde.type_p_out.weight = data["type_p_out"]["weight"]
-    nde.type_p_out.bias = data["type_p_out"]["bias"]
-    nde.conn_p_out.weight = data["conn_p_out"]["weight"]
-    nde.conn_p_out.bias = data["conn_p_out"]["bias"]
-    nde.rot_p_out.weight = data["rot_p_out"]["weight"]
-    nde.rot_p_out.bias = data["rot_p_out"]["bias"]
+    nde.fc1.weight.data = torch.Tensor(data["fc1"]["weight"])
+    nde.fc1.bias.data = torch.Tensor(data["fc1"]["bias"])
+    nde.fc2.weight.data = torch.Tensor(data["fc2"]["weight"])
+    nde.fc2.bias.data = torch.Tensor(data["fc2"]["bias"])
+    nde.fc3.weight.data = torch.Tensor(data["fc3"]["weight"])
+    nde.fc3.bias.data = torch.Tensor(data["fc3"]["bias"])
+    nde.fc4.weight.data = torch.Tensor(data["fc4"]["weight"])
+    nde.fc4.bias.data = torch.Tensor(data["fc4"]["bias"])
+    nde.type_p_out.weight.data = torch.Tensor(data["type_p_out"]["weight"])
+    nde.type_p_out.bias.data = torch.Tensor(data["type_p_out"]["bias"])
+    nde.conn_p_out.weight.data = torch.Tensor(data["conn_p_out"]["weight"])
+    nde.conn_p_out.bias.data = torch.Tensor(data["conn_p_out"]["bias"])
+    nde.rot_p_out.weight.data = torch.Tensor(data["rot_p_out"]["weight"])
+    nde.rot_p_out.bias.data = torch.Tensor(data["rot_p_out"]["bias"])
 
     return nde
 
