@@ -25,14 +25,18 @@ install(width=180, show_locals=False)
 
 class RobotBody:
     def __init__(
-        self, body_genotype: list[NDArray[np.float32]], num_modules: int
+        self,
+        body_genotype: list[NDArray[np.float32]],
+        num_modules: int,
+        nde: NeuralDevelopmentalEncoding,
     ) -> None:
         self.genotype = body_genotype
         self.num_modules = num_modules
+        self.nde = nde
 
     def copy(self) -> "RobotBody":
         new_genotype = np.copy(self.genotype)
-        return type(self)(new_genotype, self.num_modules)
+        return type(self)(new_genotype, self.num_modules, self.nde)
 
     def mutation(self) -> Self:
         P = 0.10
@@ -82,11 +86,14 @@ class RobotBody:
 
 class RandomRobotBody(RobotBody):
     def __init__(
-        self, body_genotype: list[NDArray[np.float32]], num_modules: int
+        self,
+        body_genotype: list[NDArray[np.float32]],
+        num_modules: int,
+        nde: NeuralDevelopmentalEncoding,
     ) -> None:
-        super().__init__(body_genotype, num_modules)
-        nde = NeuralDevelopmentalEncoding(number_of_modules=num_modules)
-        p_matrices = nde.forward(body_genotype)
+        super().__init__(body_genotype, num_modules, nde)
+        # nde = NeuralDevelopmentalEncoding(number_of_modules=num_modules)
+        p_matrices = self.nde.forward(body_genotype)
 
         hpd = HighProbabilityDecoder(num_modules)
         self.robot_graph: DiGraph[Any] = hpd.probability_matrices_to_graph(

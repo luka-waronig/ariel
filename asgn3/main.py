@@ -14,6 +14,7 @@ from mujoco import MjData, viewer
 import numpy as np
 from numpy.typing import NDArray
 
+from ariel.ec.genotypes.nde.nde import NeuralDevelopmentalEncoding
 from ariel.simulation.environments.olympic_arena import OlympicArena
 from ariel.utils.renderers import single_frame_renderer, video_renderer
 from ariel.utils.runners import simple_runner
@@ -51,7 +52,7 @@ class EvolutionaryAlgorithm:
         self.num_modules = 20
         self.genotype_size = 64
         self.body_generations = 256
-        self.body_population_size = 100
+        self.body_population_size = 12
         self.brain_generations = 256
         self.brain_population_size = 100
         # self.body_generations = 1
@@ -81,6 +82,8 @@ class EvolutionaryAlgorithm:
             + f"{now.tm_year}_{now.tm_mon:02}_{now.tm_mday:02}_"
             + f"{now.tm_hour:02}:{now.tm_min:02}:{now.tm_sec:02}"
         )
+
+        self.nde = NeuralDevelopmentalEncoding(self.num_modules)
 
         assert self.brain_population_size % 4 == 0, "Populations must be div. by 4."
         assert self.body_population_size % 4 == 0, "Populations must be div. by 4."
@@ -202,11 +205,12 @@ class EvolutionaryAlgorithm:
             # Stop early if brain fitness is not changing
             # I think this is a good idea, well see
             if generation > 4:
-                last_five_fitness = np.mean(
+                last_five_fitness = np.average(
                     fitness[generation - 4 : generation, :], axis=1
                 )
-                largest_fitness_change = max(np.diff(abs(last_five_fitness)))
+                largest_fitness_change = np.max(np.abs(np.diff(last_five_fitness)))
                 if largest_fitness_change < 0.0005:
+                    print(largest_fitness_change)
                     return ((robot_body, best_brain[0]), best_brain[1])
 
             weights = self.linear_windowed_weights(brains_fitness)
@@ -287,7 +291,7 @@ class EvolutionaryAlgorithm:
             for _ in range(self.body_population_size)
         ]
         robot_bodies = [
-            RandomRobotBody(body_genotype, self.num_modules)
+            RandomRobotBody(body_genotype, self.num_modules, self.nde)
             for body_genotype in body_genotypes
         ]
 
@@ -299,7 +303,7 @@ class EvolutionaryAlgorithm:
         body_genotypes = []
         while len(body_genotypes) < self.body_population_size:
             genotype = random_body_genotype(self.genotype_size)
-            body = RandomRobotBody(genotype, self.num_modules)
+            body = RandomRobotBody(genotype, self.num_modules, self.nde)
             input_size, output_size = self.get_input_output_sizes(body)
             robot = Robot(body, RandomBrain(input_size, output_size))
             self.experiment(robot, duration=3, mode="complicated")
@@ -308,7 +312,7 @@ class EvolutionaryAlgorithm:
                 progress_bar.update()
 
         robot_bodies = [
-            RandomRobotBody(body_genotype, self.num_modules)
+            RandomRobotBody(body_genotype, self.num_modules, self.nde)
             for body_genotype in body_genotypes
         ]
 
@@ -465,7 +469,7 @@ class EvolutionaryAlgorithm:
             num_modules = individual["body"]["num_modules"]
 
             fitness = individual["fitness"]
-            body = robot_type(genotype, num_modules)
+            body = robot_type(genotype, num_modules, self.nde)
             robot_bodies.append((body, fitness))
 
         return robot_bodies
