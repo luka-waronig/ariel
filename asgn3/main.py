@@ -50,14 +50,14 @@ class EvolutionaryAlgorithm:
         self.processes = 12
         self.num_modules = 20
         self.genotype_size = 64
-        # self.body_generations = 256
-        # self.body_population_size = 100
-        # self.brain_generations = 256
-        # self.brain_population_size = 100
-        self.body_generations = 1
-        self.body_population_size = 8
-        self.brain_generations = 1
-        self.brain_population_size = 8
+        self.body_generations = 256
+        self.body_population_size = 100
+        self.brain_generations = 256
+        self.brain_population_size = 100
+        # self.body_generations = 1
+        # self.body_population_size = 8
+        # self.brain_generations = 1
+        # self.brain_population_size = 8
 
         self.body_survival_fraction = 0.0
         self.brain_survival_fraction = 0.1
