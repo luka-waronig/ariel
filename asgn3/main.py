@@ -25,6 +25,7 @@ from rng import RNG
 from robots import (
     TYPE_MAP,
     Brain,
+    RandomBrain,
     TrainingBrain,
     RandomRobotBody,
     Robot,
@@ -89,7 +90,7 @@ class EvolutionaryAlgorithm:
     ) -> tuple[tuple[RobotBody, Brain], float]:
         print(f"Started EA run ({parallel = })")
         # Create body population
-        robot_bodies = self.generate_bodies()
+        robot_bodies = self.generate_bodies_preselect()
 
         fitness = np.zeros((self.body_generations, self.body_population_size))
         plotter = LivePlotter(fitness, self.dir_name)
@@ -295,6 +296,27 @@ class EvolutionaryAlgorithm:
             random_body_genotype(self.genotype_size)
             for _ in range(self.body_population_size)
         ]
+        robot_bodies = [
+            RandomRobotBody(body_genotype, self.num_modules)
+            for body_genotype in body_genotypes
+        ]
+
+        return robot_bodies
+
+    def generate_bodies_preselect(self) -> Sequence[RobotBody]:
+        print("Robot preselection")
+        progress_bar = tqdm(total=100)
+        body_genotypes = []
+        while len(body_genotypes) < 100:
+            genotype = random_body_genotype(self.genotype_size)
+            body = RandomRobotBody(genotype, self.num_modules)
+            input_size, output_size = self.get_input_output_sizes(body)
+            robot = Robot(body, RandomBrain(input_size, output_size))
+            self.experiment(robot, duration=3, mode="complicated")
+            if robot.fitness() >= 0.1:
+                body_genotypes.append(genotype)
+                progress_bar.update()
+
         robot_bodies = [
             RandomRobotBody(body_genotype, self.num_modules)
             for body_genotype in body_genotypes
